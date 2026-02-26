@@ -1,0 +1,43 @@
+<article class="card">
+    <h2>Transactions</h2>
+    <table>
+        <thead>
+        <tr>
+            <th>Date</th>
+            <th>Direction</th>
+            <th>Amount</th>
+            <th>Category</th>
+            <th>Note</th>
+            <th>Action</th>
+        </tr>
+        </thead>
+        <tbody>
+        {% for txn in transactions %}
+            <tr data-txn-id="{{ txn['id'] }}">
+                <td>{{ txn["date"] }}</td>
+                <td>{{ txn["direction"] }}</td>
+                <td>{{ "%.2f"|format(txn["amount_cents"] / 100) }}</td>
+                <td>{{ txn["category"] }}</td>
+                <td>{{ txn["note"] }}</td>
+                <td>
+                    <form
+                        method="post"
+                        action="/transactions/{{ txn['id'] }}/delete"
+                        hx-post="/transactions/{{ txn['id'] }}/delete"
+                        hx-target="#ledger-content"
+                        hx-swap="innerHTML"
+                    >
+                        <input type="hidden" name="start" value="{{ start }}">
+                        <input type="hidden" name="end" value="{{ end }}">
+                        <button type="submit">Delete</button>
+                    </form>
+                </td>
+            </tr>
+        {% else %}
+            <tr>
+                <td colspan="6">No transactions yet.</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</article>

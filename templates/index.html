@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Local Ledger</title>
+    <link rel="stylesheet" href="/static/app.css">
+    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+</head>
+<body>
+<main class="container">
+    <h1>Local Ledger</h1>
+
+    <section class="card">
+        <h2>Filter Range</h2>
+        <form method="get" action="/" class="form-grid">
+            <label>
+                Start
+                <input type="date" name="start" value="{{ start }}" required>
+            </label>
+            <label>
+                End
+                <input type="date" name="end" value="{{ end }}" required>
+            </label>
+            <button type="submit">Apply Range</button>
+        </form>
+    </section>
+
+    <section class="card">
+        <h2>Add Transaction</h2>
+        <form
+            method="post"
+            action="/transactions"
+            class="form-grid"
+            hx-post="/transactions"
+            hx-target="#ledger-content"
+            hx-swap="innerHTML"
+        >
+            <label>
+                Date
+                <input type="date" name="date" required>
+            </label>
+            <label>
+                Direction
+                <select name="direction" required>
+                    <option value="expense">Expense</option>
+                    <option value="income">Income</option>
+                </select>
+            </label>
+            <label>
+                Amount
+                <input type="text" name="amount" placeholder="12.34" required>
+            </label>
+            <label>
+                Category
+                <input type="text" name="category" required>
+            </label>
+            <label class="full-width">
+                Note
+                <input type="text" name="note" required>
+            </label>
+            <input type="hidden" name="start" value="{{ start }}">
+            <input type="hidden" name="end" value="{{ end }}">
+            <button type="submit">Save</button>
+        </form>
+    </section>
+
+    <section id="ledger-content" class="grid">
+        {% include "_summary.html" %}
+        {% include "_transactions_table.html" %}
+    </section>
+</main>
+</body>
+</html>

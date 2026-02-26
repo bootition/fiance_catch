@@ -1,0 +1,13 @@
+<article class="card">
+    <h2>Summary</h2>
+    <p>Range: {{ start }} to {{ end }}</p>
+    <p>Income: {{ "%.2f"|format(summary.income_cents / 100) }}</p>
+    <p>Expense: {{ "%.2f"|format(summary.expense_cents / 100) }}</p>
+    <ul>
+        {% for item in summary.by_category %}
+            <li>{{ item.category }}: {{ "%.2f"|format(item.amount_cents / 100) }}</li>
+        {% else %}
+            <li>No category totals yet.</li>
+        {% endfor %}
+    </ul>
+</article>
