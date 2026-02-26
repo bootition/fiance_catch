@@ -45,6 +45,54 @@ def create_account(db_path, name: str) -> int:
         return int(cur.lastrowid)
 
 
+def rename_account(db_path, account_id: int, name: str) -> None:
+    account_name = name.strip()
+    if not account_name:
+        raise ValueError("account name required")
+    with connect(db_path) as conn:
+        if (
+            conn.execute(
+                "SELECT 1 FROM accounts WHERE id = ?", (account_id,)
+            ).fetchone()
+            is None
+        ):
+            raise ValueError("account not found")
+        try:
+            cur = conn.execute(
+                """
+                UPDATE accounts
+                SET name = ?
+                WHERE id = ?
+                """,
+                (account_name, account_id),
+            )
+        except sqlite3.IntegrityError as exc:
+            raise ValueError("account name already exists") from exc
+        if cur.rowcount == 0:
+            raise ValueError("account not found")
+
+
+def delete_account(db_path, account_id: int) -> None:
+    if account_id == 1:
+        raise ValueError("default account cannot be deleted")
+    with connect(db_path) as conn:
+        account = conn.execute(
+            "SELECT id FROM accounts WHERE id = ?",
+            (account_id,),
+        ).fetchone()
+        if account is None:
+            raise ValueError("account not found")
+
+        txn_count = conn.execute(
+            "SELECT COUNT(*) AS c FROM transactions WHERE account_id = ?",
+            (account_id,),
+        ).fetchone()["c"]
+        if int(txn_count) > 0:
+            raise ValueError("account has transactions")
+
+        conn.execute("DELETE FROM accounts WHERE id = ?", (account_id,))
+
+
 def create_txn(
     db_path,
     *,

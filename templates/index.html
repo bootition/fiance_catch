@@ -52,6 +52,29 @@
             <input type="hidden" name="end" value="{{ end }}">
             <button type="submit">Create Account</button>
         </form>
+
+        <form method="post" action="/accounts/{{ account_id }}/rename" class="inline-form">
+            <label>
+                Rename Selected
+                <input type="text" name="name" value="{{ active_account_name }}" required>
+            </label>
+            <input type="hidden" name="start" value="{{ start }}">
+            <input type="hidden" name="end" value="{{ end }}">
+            <button type="submit">Rename</button>
+        </form>
+
+        {% if not is_default_account %}
+        <form
+            method="post"
+            action="/accounts/{{ account_id }}/delete"
+            class="inline-form"
+            onsubmit="return confirm('Delete this account? It must have no transactions.');"
+        >
+            <input type="hidden" name="start" value="{{ start }}">
+            <input type="hidden" name="end" value="{{ end }}">
+            <button type="submit" class="danger">Delete Selected Account</button>
+        </form>
+        {% endif %}
     </section>
 
     <section class="card">

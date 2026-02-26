@@ -12,11 +12,13 @@ from .logic import parse_amount_to_cents, validate_direction
 from .repo import (
     create_account,
     create_txn,
+    delete_account,
     delete_txn,
     get_account,
     get_summary,
     list_accounts,
     list_txns,
+    rename_account,
 )
 from .settings import get_settings
 
@@ -73,6 +75,7 @@ def _build_index_context(
         "end": end,
         "account_id": account_id,
         "active_account_name": account["name"] if account else "Default",
+        "is_default_account": account_id == 1,
         "accounts": accounts,
     }
 
@@ -119,6 +122,47 @@ def create_account_route(
         url=(
             f"/?account_id={new_account_id}&start={resolved_start}&end={resolved_end}"
         ),
+        status_code=303,
+    )
+
+
+@app.post("/accounts/{account_id}/rename")
+def rename_account_route(
+    account_id: int,
+    name: str = Form(...),
+    start: str | None = Form(default=None),
+    end: str | None = Form(default=None),
+):
+    if account_id < 1 or get_account(settings.db_path, account_id) is None:
+        raise HTTPException(status_code=404, detail="account not found")
+    try:
+        rename_account(settings.db_path, account_id, name)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    resolved_start, resolved_end = _resolve_range(start, end)
+    return RedirectResponse(
+        url=(f"/?account_id={account_id}&start={resolved_start}&end={resolved_end}"),
+        status_code=303,
+    )
+
+
+@app.post("/accounts/{account_id}/delete")
+def delete_account_route(
+    account_id: int,
+    start: str | None = Form(default=None),
+    end: str | None = Form(default=None),
+):
+    if account_id < 1 or get_account(settings.db_path, account_id) is None:
+        raise HTTPException(status_code=404, detail="account not found")
+    try:
+        delete_account(settings.db_path, account_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    resolved_start, resolved_end = _resolve_range(start, end)
+    return RedirectResponse(
+        url=f"/?account_id=1&start={resolved_start}&end={resolved_end}",
         status_code=303,
     )
 
