@@ -3,3 +3,6 @@ __pycache__/
 *.pyo
 .pytest_cache/
 .data/
+findings.md
+progress.md
+task_plan.md
