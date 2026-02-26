@@ -25,22 +25,28 @@ python -m uvicorn app.main:app --reload
 
 ## Backup and export
 
-- CSV export (for current filter range):
-  - Open `/export.csv?start=YYYY-MM-DD&end=YYYY-MM-DD`
-  - Example: `/export.csv?start=2026-02-01&end=2026-02-29`
+- CSV export (for selected account and current filter range):
+  - Open `/export.csv?account_id=<id>&start=YYYY-MM-DD&end=YYYY-MM-DD`
+  - Example: `/export.csv?account_id=1&start=2026-02-01&end=2026-02-29`
 - Full backup:
   - Stop the server.
   - Copy `.data/ledger.sqlite` to your backup location.
 
+## Multi-account foundation
+
+- `accounts` table is included with a default account (`id=1`, name `Default`).
+- Transactions are scoped by `account_id` for list/create/delete/summary/export.
+- UI supports account switching and account creation.
+
 ## MVP limitations
 
-- Single local ledger file, no user accounts.
+- Local single-user app (no login/auth, account is a bookkeeping scope only).
+- Account management supports create + switch only (no rename/delete yet).
 - No authentication/authorization.
 - No budgets, recurring rules, or reconciliation workflow.
 
-## Upgrade path (multi-account)
+## Next upgrade path
 
-- Add an `accounts` table.
-- Add `account_id` foreign key to `transactions`.
-- Scope list/create/delete/export/summary queries by `account_id`.
-- Add account switcher in UI and account-aware routing.
+- Add account rename/delete with safety checks.
+- Add transfer transactions between accounts.
+- Add account-level opening balance and archived status.

@@ -60,6 +60,25 @@ h1 {
     grid-column: 1 / -1;
 }
 
+.inline-actions {
+    display: flex;
+    align-items: flex-end;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.inline-form {
+    display: flex;
+    align-items: flex-end;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-top: 12px;
+}
+
+.inline-form label {
+    min-width: 220px;
+}
+
 label {
     display: flex;
     flex-direction: column;
@@ -88,6 +107,22 @@ button {
 
 button:hover {
     background: var(--accent-hover);
+}
+
+.button-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    color: var(--accent);
+    text-decoration: none;
+    background: #f5fbf9;
+}
+
+.button-link:hover {
+    background: #ebf6f2;
 }
 
 table {

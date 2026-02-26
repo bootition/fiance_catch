@@ -1,5 +1,5 @@
 <article class="card">
-    <h2>Transactions</h2>
+    <h2>Transactions - {{ active_account_name }}</h2>
     <table>
         <thead>
         <tr>
@@ -27,6 +27,7 @@
                         hx-target="#ledger-content"
                         hx-swap="innerHTML"
                     >
+                        <input type="hidden" name="account_id" value="{{ account_id }}">
                         <input type="hidden" name="start" value="{{ start }}">
                         <input type="hidden" name="end" value="{{ end }}">
                         <button type="submit">Delete</button>

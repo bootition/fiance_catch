@@ -12,8 +12,18 @@
     <h1>Local Ledger</h1>
 
     <section class="card">
-        <h2>Filter Range</h2>
+        <h2>Account and Range</h2>
         <form method="get" action="/" class="form-grid">
+            <label>
+                Account
+                <select name="account_id" required>
+                    {% for account in accounts %}
+                        <option value="{{ account['id'] }}" {% if account['id'] == account_id %}selected{% endif %}>
+                            {{ account['name'] }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </label>
             <label>
                 Start
                 <input type="date" name="start" value="{{ start }}" required>
@@ -22,7 +32,25 @@
                 End
                 <input type="date" name="end" value="{{ end }}" required>
             </label>
-            <button type="submit">Apply Range</button>
+            <div class="inline-actions">
+                <button type="submit">Apply</button>
+                <a
+                    class="button-link"
+                    href="/export.csv?account_id={{ account_id }}&start={{ start }}&end={{ end }}"
+                >
+                    Export CSV
+                </a>
+            </div>
+        </form>
+
+        <form method="post" action="/accounts" class="inline-form">
+            <label>
+                New Account
+                <input type="text" name="name" placeholder="e.g. Family" required>
+            </label>
+            <input type="hidden" name="start" value="{{ start }}">
+            <input type="hidden" name="end" value="{{ end }}">
+            <button type="submit">Create Account</button>
         </form>
     </section>
 
@@ -59,6 +87,7 @@
                 Note
                 <input type="text" name="note" required>
             </label>
+            <input type="hidden" name="account_id" value="{{ account_id }}">
             <input type="hidden" name="start" value="{{ start }}">
             <input type="hidden" name="end" value="{{ end }}">
             <button type="submit">Save</button>
