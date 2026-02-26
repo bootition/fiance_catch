@@ -2,6 +2,7 @@ import pytest
 
 from app.db import init_db
 from app.repo import (
+    archive_account,
     create_account,
     create_txn,
     delete_account,
@@ -10,6 +11,7 @@ from app.repo import (
     list_accounts,
     list_txns,
     rename_account,
+    restore_account,
 )
 from app.settings import Settings
 
@@ -152,3 +154,48 @@ def test_delete_account_safety_checks(tmp_path):
     delete_account(settings.db_path, empty_id)
     names = [account["name"] for account in list_accounts(settings.db_path)]
     assert names == ["Default", "Busy"]
+
+
+def test_archive_and_restore_account(tmp_path):
+    settings = Settings(data_dir=tmp_path, db_path=tmp_path / "t.sqlite")
+    init_db(settings)
+
+    family_id = create_account(settings.db_path, "Family")
+    archive_account(settings.db_path, family_id)
+
+    visible_accounts = list_accounts(settings.db_path)
+    assert [account["name"] for account in visible_accounts] == ["Default"]
+
+    all_accounts = list_accounts(settings.db_path, include_archived=True)
+    archived = [account for account in all_accounts if account["id"] == family_id][0]
+    assert archived["archived"] == 1
+
+    restore_account(settings.db_path, family_id)
+    visible_accounts_after_restore = list_accounts(settings.db_path)
+    assert [account["name"] for account in visible_accounts_after_restore] == [
+        "Default",
+        "Family",
+    ]
+
+
+def test_archive_restore_safety_checks(tmp_path):
+    settings = Settings(data_dir=tmp_path, db_path=tmp_path / "t.sqlite")
+    init_db(settings)
+
+    family_id = create_account(settings.db_path, "Family")
+
+    with pytest.raises(ValueError, match="default account cannot be archived"):
+        archive_account(settings.db_path, 1)
+
+    with pytest.raises(ValueError, match="account not found"):
+        archive_account(settings.db_path, 999)
+
+    archive_account(settings.db_path, family_id)
+
+    with pytest.raises(ValueError, match="account already archived"):
+        archive_account(settings.db_path, family_id)
+
+    restore_account(settings.db_path, family_id)
+
+    with pytest.raises(ValueError, match="account is not archived"):
+        restore_account(settings.db_path, family_id)

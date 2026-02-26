@@ -24,9 +24,24 @@ def init_db(settings: Settings) -> None:
             CREATE TABLE IF NOT EXISTS accounts (
               id INTEGER PRIMARY KEY AUTOINCREMENT,
               name TEXT NOT NULL UNIQUE,
+              archived INTEGER NOT NULL DEFAULT 0 CHECK(archived IN (0,1)),
               created_at TEXT NOT NULL DEFAULT (datetime('now')),
               updated_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
+            """
+        )
+        if not _column_exists(conn, "accounts", "archived"):
+            conn.execute(
+                """
+                ALTER TABLE accounts
+                ADD COLUMN archived INTEGER NOT NULL DEFAULT 0
+                """
+            )
+        conn.execute(
+            """
+            UPDATE accounts
+            SET archived = 0
+            WHERE archived IS NULL
             """
         )
         conn.execute(

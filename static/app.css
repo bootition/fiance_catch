@@ -79,6 +79,17 @@ h1 {
     min-width: 220px;
 }
 
+label.checkbox-row {
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    color: var(--text);
+}
+
+label.checkbox-row input {
+    width: auto;
+}
+
 label {
     display: flex;
     flex-direction: column;
@@ -131,6 +142,17 @@ button.danger:hover {
 
 .button-link:hover {
     background: #ebf6f2;
+}
+
+.muted-text {
+    color: var(--muted);
+    font-size: 13px;
+}
+
+.note-text {
+    margin-top: 10px;
+    color: var(--muted);
+    font-size: 13px;
 }
 
 table {

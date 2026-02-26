@@ -3,15 +3,25 @@ import sqlite3
 from .db import connect
 
 
-def list_accounts(db_path):
+def list_accounts(db_path, *, include_archived: bool = False):
     with connect(db_path) as conn:
-        cur = conn.execute(
-            """
-            SELECT id, name
-            FROM accounts
-            ORDER BY id ASC
-            """
-        )
+        if include_archived:
+            cur = conn.execute(
+                """
+                SELECT id, name, archived
+                FROM accounts
+                ORDER BY archived ASC, id ASC
+                """
+            )
+        else:
+            cur = conn.execute(
+                """
+                SELECT id, name, archived
+                FROM accounts
+                WHERE archived = 0
+                ORDER BY id ASC
+                """
+            )
         return cur.fetchall()
 
 
@@ -19,7 +29,7 @@ def get_account(db_path, account_id: int):
     with connect(db_path) as conn:
         return conn.execute(
             """
-            SELECT id, name
+            SELECT id, name, archived
             FROM accounts
             WHERE id = ?
             """,
@@ -91,6 +101,42 @@ def delete_account(db_path, account_id: int) -> None:
             raise ValueError("account has transactions")
 
         conn.execute("DELETE FROM accounts WHERE id = ?", (account_id,))
+
+
+def archive_account(db_path, account_id: int) -> None:
+    if account_id == 1:
+        raise ValueError("default account cannot be archived")
+    with connect(db_path) as conn:
+        account = conn.execute(
+            "SELECT id, archived FROM accounts WHERE id = ?",
+            (account_id,),
+        ).fetchone()
+        if account is None:
+            raise ValueError("account not found")
+        if int(account["archived"]) == 1:
+            raise ValueError("account already archived")
+
+        conn.execute(
+            "UPDATE accounts SET archived = 1 WHERE id = ?",
+            (account_id,),
+        )
+
+
+def restore_account(db_path, account_id: int) -> None:
+    with connect(db_path) as conn:
+        account = conn.execute(
+            "SELECT id, archived FROM accounts WHERE id = ?",
+            (account_id,),
+        ).fetchone()
+        if account is None:
+            raise ValueError("account not found")
+        if int(account["archived"]) == 0:
+            raise ValueError("account is not archived")
+
+        conn.execute(
+            "UPDATE accounts SET archived = 0 WHERE id = ?",
+            (account_id,),
+        )
 
 
 def create_txn(

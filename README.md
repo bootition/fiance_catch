@@ -37,17 +37,19 @@ python -m uvicorn app.main:app --reload
 - `accounts` table is included with a default account (`id=1`, name `Default`).
 - Transactions are scoped by `account_id` for list/create/delete/summary/export.
 - UI supports account switching, create, rename, and guarded delete.
+- Accounts support archive/restore, and archived accounts are hidden by default.
 
 ## MVP limitations
 
 - Local single-user app (no login/auth, account is a bookkeeping scope only).
 - Default account cannot be deleted.
 - Account delete requires zero transactions in that account.
+- Archived accounts are read-only until restored.
 - No authentication/authorization.
 - No budgets, recurring rules, or reconciliation workflow.
 
 ## Next upgrade path
 
-- Add account rename/delete with safety checks.
+- Add one-click "migrate transactions then delete account" flow.
 - Add transfer transactions between accounts.
-- Add account-level opening balance and archived status.
+- Add account-level opening balance.

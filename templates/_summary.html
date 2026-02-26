@@ -1,6 +1,7 @@
 <article class="card">
     <h2>Summary</h2>
     <p>Account: {{ active_account_name }}</p>
+    <p>Status: {% if is_archived_account %}Archived{% else %}Active{% endif %}</p>
     <p>Range: {{ start }} to {{ end }}</p>
     <p>Income: {{ "%.2f"|format(summary.income_cents / 100) }}</p>
     <p>Expense: {{ "%.2f"|format(summary.expense_cents / 100) }}</p>
