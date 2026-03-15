@@ -1,443 +1,344 @@
-# Local Ledger Web App Implementation Plan
+# Local Ledger Web App Replay Implementation Plan
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Implement a local desktop-first web app to manually record transactions into SQLite, browse/filter them, see monthly/category summaries, and export CSV.
+**Goal:** Reproduce the current as-built local ledger app through deterministic chat rounds for vibe-coding competition replay.
 
-**Architecture:** FastAPI serves server-rendered Jinja templates; HTMX handles partial updates; SQLite stores transactions.
+**Architecture:** FastAPI serves Jinja templates, HTMX updates ledger fragments, Chart.js renders review charts, SQLite stores ledger/import data, and repository helpers isolate SQL.
 
-**Tech Stack:** Python, FastAPI, Jinja2, HTMX, SQLite, pytest.
+**Tech Stack:** Python, FastAPI, Jinja2, HTMX, Chart.js, SQLite, pytest.
 
 ---
 
-### Task 1: Create minimal project skeleton
+## Replay Rules (Use in Competition)
 
-**Files:**
-- Create: `app/main.py`
-- Create: `app/db.py`
-- Create: `app/models.py`
-- Create: `app/settings.py`
-- Create: `templates/index.html`
-- Create: `static/app.css`
-- Create: `requirements.txt`
-- Create: `README.md`
+1. Execute tasks in order. Do not skip verification checkpoints.
+2. After each task, ask the coding agent to show changed files and run listed tests.
+3. Keep single-ledger behavior (no account switching in UI).
+4. Preserve compatibility tables/columns for legacy multi-account databases.
+5. Before final submission, run full test suite.
 
-**Step 1: Create requirements**
+---
 
-Put these in `requirements.txt`:
+### Task 1: Project bootstrap and runtime wiring
+
+**Files**
+- Create/verify: `requirements.txt`
+- Create/verify: `app/settings.py`
+- Create/verify: `app/main.py`
+- Create/verify: `README.md`
+
+**Replay prompt (send to coding agent)**
 
 ```text
-fastapi==0.115.0
-uvicorn[standard]==0.30.6
-jinja2==3.1.4
-python-multipart==0.0.9
-pytest==8.3.2
-httpx==0.27.2
+Set up a FastAPI local ledger app skeleton. Use app/settings.py for .data/ledger.sqlite config, initialize app in app/main.py, and keep run instructions in README.md.
 ```
 
-**Step 2: Add settings**
+**Verification**
 
-Create `app/settings.py`:
-
-```python
-from dataclasses import dataclass
-from pathlib import Path
-
-
-@dataclass(frozen=True)
-class Settings:
-    data_dir: Path
-    db_path: Path
-
-
-def get_settings() -> Settings:
-    data_dir = Path.cwd() / ".data"
-    return Settings(data_dir=data_dir, db_path=data_dir / "ledger.sqlite")
-```
-
-**Step 3: DB helpers (create tables on startup)**
-
-Create `app/db.py`:
-
-```python
-import sqlite3
-from contextlib import contextmanager
-
-from .settings import Settings
-
-
-def connect(db_path):
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-
-def init_db(settings: Settings) -> None:
-    settings.data_dir.mkdir(parents=True, exist_ok=True)
-    with connect(settings.db_path) as conn:
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS transactions (
-              id INTEGER PRIMARY KEY AUTOINCREMENT,
-              date TEXT NOT NULL,
-              direction TEXT NOT NULL CHECK(direction IN ('income','expense')),
-              amount_cents INTEGER NOT NULL CHECK(amount_cents >= 0),
-              category TEXT NOT NULL,
-              note TEXT NOT NULL,
-              created_at TEXT NOT NULL DEFAULT (datetime('now')),
-              updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-            );
-            """
-        )
-        conn.execute(
-            """
-            CREATE TRIGGER IF NOT EXISTS transactions_updated_at
-            AFTER UPDATE ON transactions
-            FOR EACH ROW
-            BEGIN
-              UPDATE transactions SET updated_at = datetime('now') WHERE id = OLD.id;
-            END;
-            """
-        )
-```
-
-**Step 4: Minimal FastAPI app + template rendering**
-
-Create `app/main.py`:
-
-```python
-from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse
-from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
-
-from .db import init_db
-from .settings import get_settings
-
-
-settings = get_settings()
-init_db(settings)
-
-app = FastAPI()
-app.mount("/static", StaticFiles(directory="static"), name="static")
-templates = Jinja2Templates(directory="templates")
-
-
-@app.get("/", response_class=HTMLResponse)
-def index(request: Request):
-    return templates.TemplateResponse(
-        "index.html",
-        {
-            "request": request,
-            "transactions": [],
-            "summary": {"income_cents": 0, "expense_cents": 0, "by_category": []},
-        },
-    )
-```
-
-**Step 5: Basic HTML + CSS placeholder**
-
-Create `templates/index.html` (simple form + empty list placeholders).
-
-Create `static/app.css` (minimal readable layout).
-
-**Step 6: Manual run check**
-
-Run:
-
-```bash
-python -m pip install -r requirements.txt
-python -m uvicorn app.main:app --reload
-```
-
-Expected: `GET /` renders an HTML page.
+- Run: `python -m uvicorn app.main:app --reload`
+- Expected: app boots and serves `GET /` without crash.
 
 ---
 
-### Task 2: Add transaction parsing + validation utilities (TDD)
+### Task 2: SQLite schema + migration/repair layer
 
-**Files:**
-- Create: `app/logic.py`
-- Create: `tests/test_logic.py`
+**Files**
+- Create/verify: `app/db.py`
 
-**Step 1: Write failing tests**
+**Required outcomes**
 
-Create `tests/test_logic.py`:
+- Create tables: `accounts`, `transactions`, `import_sessions`, `import_rows`, `category_rules`.
+- Ensure constraints and triggers.
+- Add compatibility repair logic for legacy DB variants.
+- Ensure indexes:
+  - `idx_transactions_account_date`
+  - `idx_transactions_import_batch_id`
+  - import rows and rules indexes.
 
-```python
-import pytest
+**Replay prompt**
 
-from app.logic import parse_amount_to_cents, validate_direction
-
-
-@pytest.mark.parametrize(
-    "s,expected",
-    [
-        ("0.01", 1),
-        ("1", 100),
-        ("1.2", 120),
-        ("1.20", 120),
-        ("10.05", 1005),
-    ],
-)
-def test_parse_amount_to_cents_ok(s, expected):
-    assert parse_amount_to_cents(s) == expected
-
-
-@pytest.mark.parametrize("s", ["", "-1", "abc", "1.234"])
-def test_parse_amount_to_cents_bad(s):
-    with pytest.raises(ValueError):
-        parse_amount_to_cents(s)
-
-
-@pytest.mark.parametrize("s", ["income", "expense"])
-def test_validate_direction_ok(s):
-    assert validate_direction(s) == s
-
-
-@pytest.mark.parametrize("s", ["in", "out", "", "Income"])
-def test_validate_direction_bad(s):
-    with pytest.raises(ValueError):
-        validate_direction(s)
+```text
+Implement robust init_db() in app/db.py that both creates the modern schema and repairs legacy SQLite schemas (missing columns, weak constraints, old direction check, old unique index on source_txn_id). Keep data safe during rebuild.
 ```
 
-**Step 2: Run tests to confirm failing**
+**Verification**
 
-Run: `pytest -q`
-Expected: FAIL (module/functions missing).
+- Run: `python -m pytest tests/test_db_migration.py -q`
+- Expected: all migration tests pass.
 
-**Step 3: Implement minimal logic**
+---
 
-Create `app/logic.py`:
+### Task 3: Input validation utilities
 
-```python
-from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+**Files**
+- Create/verify: `app/logic.py`
+- Create/verify: `tests/test_logic.py`
 
+**Required outcomes**
 
-def validate_direction(s: str) -> str:
-    if s not in {"income", "expense"}:
-        raise ValueError("direction must be income or expense")
-    return s
+- `parse_amount_to_cents()` with decimal-safe parsing.
+- `validate_direction()` for manual ledger route (`income|expense`).
 
+**Replay prompt**
 
-def parse_amount_to_cents(s: str) -> int:
-    if not isinstance(s, str) or not s.strip():
-        raise ValueError("amount required")
-    try:
-        d = Decimal(s)
-    except InvalidOperation as e:
-        raise ValueError("amount invalid") from e
-    if d < 0:
-        raise ValueError("amount must be non-negative")
-    cents = (d * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
-    # reject >2 decimals by checking exact cents equivalence
-    if (d * 100) != cents:
-        raise ValueError("amount supports up to 2 decimals")
-    return int(cents)
+```text
+Add validation helpers in app/logic.py: parse decimal amount strings into integer cents and validate manual direction values. Include tests for valid and invalid cases.
 ```
 
-**Step 4: Run tests**
+**Verification**
 
-Run: `pytest -q`
-Expected: PASS.
+- Run: `python -m pytest tests/test_logic.py -q`
+- Expected: all tests pass.
 
 ---
 
-### Task 3: Implement DB CRUD for transactions (TDD)
+### Task 4: Repository layer for ledger + summaries
 
-**Files:**
-- Create: `app/repo.py`
-- Create: `tests/test_repo.py`
-- Modify: `app/db.py`
+**Files**
+- Create/verify: `app/repo.py`
+- Create/verify: `tests/test_repo.py`
+- Create/verify: `tests/test_repo_summary.py`
+- Create/verify: `tests/test_repo_accounts.py`
 
-**Step 1: Adjust DB connect/init to accept custom db_path for tests**
+**Required outcomes**
 
-In `app/db.py`, ensure `connect(db_path)` accepts a `Path` or `str`.
+- Transaction CRUD helpers.
+- Date-range listing, category list, summary aggregation.
+- Single-ledger behavior (account scoping intentionally ignored in product mode).
 
-**Step 2: Write failing tests with temporary sqlite file**
+**Replay prompt**
 
-Create `tests/test_repo.py`:
-
-```python
-from datetime import date
-
-from app.db import init_db
-from app.repo import create_txn, list_txns, delete_txn
-from app.settings import Settings
-
-
-def test_create_list_delete(tmp_path):
-    settings = Settings(data_dir=tmp_path, db_path=tmp_path / "t.sqlite")
-    init_db(settings)
-
-    tid = create_txn(
-        settings.db_path,
-        date_str="2026-02-25",
-        direction="expense",
-        amount_cents=1234,
-        category="food",
-        note="lunch",
-    )
-    rows = list_txns(settings.db_path, start="2026-02-01", end="2026-02-28")
-    assert len(rows) == 1
-    assert rows[0]["id"] == tid
-    assert rows[0]["amount_cents"] == 1234
-
-    delete_txn(settings.db_path, tid)
-    rows2 = list_txns(settings.db_path, start="2026-02-01", end="2026-02-28")
-    assert rows2 == []
+```text
+Implement repository functions for transactions and summaries. Keep SQL in app/repo.py. Preserve single-ledger behavior by writing new rows to account_id=1 and not filtering by account_id in listing/summary/category helpers.
 ```
 
-**Step 3: Run tests to confirm failing**
+**Verification**
 
-Run: `pytest -q`
-Expected: FAIL.
+- Run: `python -m pytest tests/test_repo.py tests/test_repo_summary.py tests/test_repo_accounts.py -q`
+- Expected: all tests pass.
 
-**Step 4: Implement repository**
+---
 
-Create `app/repo.py`:
+### Task 5: Ledger page (manual add/delete/filter/export)
 
-```python
-from .db import connect
+**Files**
+- Update/verify: `app/main.py`
+- Update/verify: `templates/index.html`
+- Update/verify: `templates/_summary.html`
+- Update/verify: `templates/_transactions_table.html`
 
+**Required outcomes**
 
-def create_txn(db_path, *, date_str, direction, amount_cents, category, note) -> int:
-    with connect(db_path) as conn:
-        cur = conn.execute(
-            """
-            INSERT INTO transactions(date, direction, amount_cents, category, note)
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            (date_str, direction, amount_cents, category, note),
-        )
-        return int(cur.lastrowid)
+- Routes:
+  - `GET /`
+  - `POST /transactions`
+  - `POST /transactions/{txn_id}/delete`
+  - `GET /export.csv`
+- HTMX partial refresh path for create/delete.
+- Note normalization to `无` when blank.
+- Date-range query support and CSV export with UTF-8 BOM.
 
+**Replay prompt**
 
-def list_txns(db_path, *, start: str, end: str):
-    with connect(db_path) as conn:
-        cur = conn.execute(
-            """
-            SELECT * FROM transactions
-            WHERE date >= ? AND date <= ?
-            ORDER BY date DESC, id DESC
-            """,
-            (start, end),
-        )
-        return cur.fetchall()
-
-
-def delete_txn(db_path, txn_id: int) -> None:
-    with connect(db_path) as conn:
-        conn.execute("DELETE FROM transactions WHERE id = ?", (txn_id,))
+```text
+Build the ledger UI with Jinja + HTMX: add transaction form, date-range filter, summary card, transaction table, delete action, and CSV export endpoint. Support both full-page and HX partial update responses.
 ```
 
-**Step 5: Run tests**
+**Verification**
 
-Run: `pytest -q`
-Expected: PASS.
-
----
-
-### Task 4: Wire up create + list + delete in the web UI
-
-**Files:**
-- Modify: `app/main.py`
-- Modify: `templates/index.html`
-- Create: `templates/_transactions_table.html`
-- Create: `templates/_summary.html`
-
-**Step 1: Add form POST /transactions**
-
-- Parse form fields.
-- Validate direction/amount.
-- Insert into DB.
-- Re-render list + summary.
-
-**Step 2: Add date-range filter (query params)**
-
-- Default range: current month.
-- Allow `?start=YYYY-MM-DD&end=YYYY-MM-DD`.
-
-**Step 3: Add delete button**
-
-- `POST /transactions/{id}/delete` then return updated partial.
-
-**Step 4: HTMX partial updates**
-
-- On create/delete, return partial HTML for the table + summary.
-
-**Step 5: Manual verification**
-
-- Start server.
-- Add 3 transactions.
-- Delete 1.
-- Verify list updates without full refresh.
+- Run: `python -m pytest tests/test_main_routes.py -q -k "create_transaction or delete_transaction or export_csv or summary_is_correct or note_"`
+- Expected: selected ledger tests pass.
 
 ---
 
-### Task 5: Add summary queries (monthly totals + by-category)
+### Task 6: Review dashboard page
 
-**Files:**
-- Modify: `app/repo.py`
-- Add tests: `tests/test_repo_summary.py`
+**Files**
+- Update/verify: `app/main.py`
+- Create/verify: `templates/review.html`
 
-**Step 1: Write failing tests**
+**Required outcomes**
 
-- Insert known rows.
-- Assert income/expense totals.
-- Assert by-category aggregation for expenses.
+- Route: `GET /review`.
+- Week/month/year tabs.
+- Current-window line chart data and expense pie chart data.
+- Net consumption metric.
 
-**Step 2: Implement SQL aggregation**
+**Replay prompt**
 
-- Totals: sum by direction.
-- By category: sum expense by category order desc.
+```text
+Add /review page with period tabs (week/month/year), current-window trend line chart (income+expense), expense category pie chart, and net consumption metric. Use Chart.js in template and compute data server-side.
+```
 
-**Step 3: Wire summary into `/`**
+**Verification**
 
-- Render `templates/_summary.html`.
-
----
-
-### Task 6: CSV export
-
-**Files:**
-- Modify: `app/main.py`
-
-**Step 1: Add `GET /export.csv`**
-
-- Use current filter start/end.
-- Return `text/csv` with UTF-8 BOM if needed for Excel compatibility.
-
-**Step 2: Manual verification**
-
-- Download CSV.
-- Open with Excel.
+- Run: `python -m pytest tests/test_main_routes.py -q -k "review_page"`
+- Expected: review tests pass for both en and zh-CN.
 
 ---
 
-### Task 7: Persistence + restart check
+### Task 7: Alipay CSV parser and direct import endpoint
 
-**Files:**
-- None (behavior)
+**Files**
+- Update/verify: `app/main.py`
 
-**Steps:**
+**Required outcomes**
 
-1. Add several transactions.
-2. Stop server.
-3. Start server.
-4. Confirm data still present.
-5. Document DB file location in `README.md`.
+- Parse flexible Alipay CSV headers and optional preface lines.
+- Decode encodings (`utf-8-sig`, `gb18030`, fallback `utf-8`).
+- Classify statuses (importable vs skipped_status).
+- Optional include/exclude neutral rows.
+- Route: `POST /import/alipay`.
+
+**Replay prompt**
+
+```text
+Implement Alipay CSV parsing in app/main.py with tolerant header detection, status classification, flexible date parsing, and include_neutral toggle. Add direct import route /import/alipay and return import counters in redirect query params.
+```
+
+**Verification**
+
+- Run: `python -m pytest tests/test_main_routes.py -q -k "import_alipay"`
+- Expected: import parser tests pass.
 
 ---
 
-### Task 8: Documentation and polish
+### Task 8: Import preview session workflow
 
-**Files:**
-- Modify: `README.md`
-- Modify: `static/app.css`
+**Files**
+- Update/verify: `app/main.py`
+- Create/verify: `templates/import.html`
+- Create/verify: `templates/import_preview.html`
 
-**Steps:**
+**Required outcomes**
 
-- Add run instructions.
-- Add backup/export instructions.
-- Explain MVP limitations and upgrade path (multi-account).
+- Routes:
+  - `GET /import`
+  - `POST /import/alipay/preview`
+  - `GET /import/preview/{session_id}`
+  - `POST /import/preview/{session_id}/row/{row_id}`
+  - `POST /import/preview/{session_id}/bulk-update`
+  - `POST /import/preview/{session_id}/bulk-delete`
+  - `POST /import/preview/{session_id}/commit`
+  - `POST /import/preview/{session_id}/discard`
+- Preview rows are stored in DB before commit.
+- Commit writes selected valid rows only.
+
+**Replay prompt**
+
+```text
+Add an import preview workflow with DB-backed sessions. Preview should not write transactions immediately. Users can edit rows, select rows, bulk update, then commit/discard the session. Commit inserts only valid selected rows.
+```
+
+**Verification**
+
+- Run: `python -m pytest tests/test_main_routes.py -q -k "import_preview"`
+- Expected: preview lifecycle tests pass.
+
+---
+
+### Task 9: Category rules and repeatable import behavior
+
+**Files**
+- Update/verify: `app/repo.py`
+- Update/verify: `app/main.py`
+- Update/verify: `templates/import_preview.html`
+
+**Required outcomes**
+
+- Category rule persistence and application on future imports.
+- Support creating rules from selected rows and optional explicit pattern.
+- Keep intentional non-dedup import behavior by `source_txn_id`.
+
+**Replay prompt**
+
+```text
+Implement category rules so import preview can map raw categories to target categories and persist these mappings for future imports. Keep duplicate source_txn_id rows importable (no dedup).
+```
+
+**Verification**
+
+- Run: `python -m pytest tests/test_main_routes.py -q -k "create_rule or dedup or same_trade_no"`
+- Expected: rule and duplicate behavior tests pass.
+
+---
+
+### Task 10: Bulk delete center with safety guardrails
+
+**Files**
+- Update/verify: `app/main.py`
+- Update/verify: `app/repo.py`
+- Update/verify: `templates/import.html`
+
+**Required outcomes**
+
+- Preview route issues temporary delete token.
+- Execute route validates:
+  - confirm text (`DELETE` or `DELETE ALL`)
+  - expected count consistency
+  - explicit allow-delete-all when filters are empty
+- Support delete by import batch and by conditional filters.
+
+**Replay prompt**
+
+```text
+Build a safe bulk delete center: preview first, issue a short-lived token, require explicit confirm text, reject stale expected counts with 409, and block delete-all unless allow_delete_all is explicitly enabled.
+```
+
+**Verification**
+
+- Run: `python -m pytest tests/test_main_routes.py -q -k "bulk_delete or delete_import_batch"`
+- Expected: bulk delete safety and batch delete tests pass.
+
+---
+
+### Task 11: Single-ledger freeze and account-route shutdown
+
+**Files**
+- Update/verify: `app/main.py`
+- Update/verify: `README.md`
+
+**Required outcomes**
+
+- Keep account management routes present but returning 404 with fixed detail.
+- Remove account selectors from UI pages.
+- Ensure list/summary/export still include legacy non-default account rows.
+
+**Replay prompt**
+
+```text
+Finalize product mode as single-ledger: disable account management endpoints with 404 responses, keep compatibility data readable, and document this behavior in README.
+```
+
+**Verification**
+
+- Run: `python -m pytest tests/test_main_routes.py -q -k "single_ledger or account_management_routes_are_disabled or legacy_multi_account"`
+- Expected: single-ledger compatibility tests pass.
+
+---
+
+### Task 12: End-to-end verification for submission
+
+**Files**
+- Verify all above files only; avoid unrelated edits.
+
+**Replay prompt**
+
+```text
+Run full verification and report concise evidence: test summary, key route checks, and any warnings. Do not change behavior unless tests fail.
+```
+
+**Verification**
+
+- Run: `python -m pytest -q`
+- Expected: full suite pass (`74 passed` baseline).
+
+---
+
+## Final Replay Checklist (Competition Upload)
+
+- Design doc is as-built, not aspirational.
+- Plan tasks map one-to-one to existing modules/routes.
+- Route list and constraints match current behavior.
+- Verification command and expected output are included.

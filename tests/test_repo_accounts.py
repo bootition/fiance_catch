@@ -1,201 +1,96 @@
-import pytest
+import sqlite3
 
 from app.db import init_db
-from app.repo import (
-    archive_account,
-    create_account,
-    create_txn,
-    delete_account,
-    delete_txn,
-    get_summary,
-    list_accounts,
-    list_txns,
-    rename_account,
-    restore_account,
-)
+from app.repo import create_txn, delete_txn, get_summary, list_categories, list_txns
 from app.settings import Settings
 
 
-def test_create_and_list_accounts(tmp_path):
+def test_create_txn_always_writes_default_account(tmp_path):
     settings = Settings(data_dir=tmp_path, db_path=tmp_path / "t.sqlite")
     init_db(settings)
 
-    accounts = list_accounts(settings.db_path)
-    assert [account["name"] for account in accounts] == ["Default"]
+    conn = sqlite3.connect(str(settings.db_path))
+    conn.execute(
+        "INSERT OR IGNORE INTO accounts(id, name, archived) VALUES (2, 'Family', 0)"
+    )
+    conn.commit()
+    conn.close()
 
-    new_account_id = create_account(settings.db_path, "Family")
-    assert new_account_id > 1
+    txn_id = create_txn(
+        settings.db_path,
+        account_id=2,
+        date_str="2026-03-10",
+        direction="expense",
+        amount_cents=100,
+        category="food",
+        note="forced-default",
+    )
 
-    accounts2 = list_accounts(settings.db_path)
-    assert [account["name"] for account in accounts2] == ["Default", "Family"]
+    conn2 = sqlite3.connect(str(settings.db_path))
+    conn2.row_factory = sqlite3.Row
+    row = conn2.execute(
+        "SELECT id, account_id FROM transactions WHERE id = ?",
+        (txn_id,),
+    ).fetchone()
+    conn2.close()
+
+    assert row["account_id"] == 1
 
 
-def test_transactions_are_scoped_by_account(tmp_path):
+def test_list_txns_get_summary_and_categories_ignore_account_scope(tmp_path):
     settings = Settings(data_dir=tmp_path, db_path=tmp_path / "t.sqlite")
     init_db(settings)
 
-    family_id = create_account(settings.db_path, "Family")
+    conn = sqlite3.connect(str(settings.db_path))
+    conn.execute(
+        "INSERT OR IGNORE INTO accounts(id, name, archived) VALUES (2, 'Family', 0)"
+    )
+    conn.execute(
+        """
+        INSERT INTO transactions(account_id, date, direction, amount_cents, category, note)
+        VALUES
+          (1, '2026-03-10', 'income', 300000, 'salary', 'default-row'),
+          (2, '2026-03-11', 'expense', 1200, 'food', 'family-row')
+        """
+    )
+    conn.commit()
+    conn.close()
 
-    default_txn_id = create_txn(
+    rows = list_txns(
+        settings.db_path,
+        account_id=999,
+        start="2026-03-01",
+        end="2026-03-31",
+    )
+    assert len(rows) == 2
+
+    summary = get_summary(
+        settings.db_path,
+        account_id=999,
+        start="2026-03-01",
+        end="2026-03-31",
+    )
+    assert summary["income_cents"] == 300000
+    assert summary["expense_cents"] == 1200
+
+    categories = list_categories(settings.db_path, account_id=999)
+    assert categories == ["food", "salary"]
+
+
+def test_delete_txn_removes_row_without_account_scope(tmp_path):
+    settings = Settings(data_dir=tmp_path, db_path=tmp_path / "t.sqlite")
+    init_db(settings)
+
+    txn_id = create_txn(
         settings.db_path,
         account_id=1,
         date_str="2026-03-10",
-        direction="income",
-        amount_cents=100000,
-        category="salary",
-        note="default account",
-    )
-    family_txn_id = create_txn(
-        settings.db_path,
-        account_id=family_id,
-        date_str="2026-03-11",
-        direction="expense",
-        amount_cents=2500,
-        category="food",
-        note="family account",
-    )
-
-    default_rows = list_txns(
-        settings.db_path,
-        account_id=1,
-        start="2026-03-01",
-        end="2026-03-31",
-    )
-    family_rows = list_txns(
-        settings.db_path,
-        account_id=family_id,
-        start="2026-03-01",
-        end="2026-03-31",
-    )
-    assert [row["id"] for row in default_rows] == [default_txn_id]
-    assert [row["id"] for row in family_rows] == [family_txn_id]
-
-    delete_txn(settings.db_path, family_txn_id, account_id=1)
-    family_rows_after_wrong_delete = list_txns(
-        settings.db_path,
-        account_id=family_id,
-        start="2026-03-01",
-        end="2026-03-31",
-    )
-    assert [row["id"] for row in family_rows_after_wrong_delete] == [family_txn_id]
-
-    delete_txn(settings.db_path, family_txn_id, account_id=family_id)
-    family_rows_after_delete = list_txns(
-        settings.db_path,
-        account_id=family_id,
-        start="2026-03-01",
-        end="2026-03-31",
-    )
-    assert family_rows_after_delete == []
-
-    default_summary = get_summary(
-        settings.db_path,
-        account_id=1,
-        start="2026-03-01",
-        end="2026-03-31",
-    )
-    family_summary = get_summary(
-        settings.db_path,
-        account_id=family_id,
-        start="2026-03-01",
-        end="2026-03-31",
-    )
-    assert default_summary["income_cents"] == 100000
-    assert default_summary["expense_cents"] == 0
-    assert family_summary["income_cents"] == 0
-    assert family_summary["expense_cents"] == 0
-
-
-def test_rename_account(tmp_path):
-    settings = Settings(data_dir=tmp_path, db_path=tmp_path / "t.sqlite")
-    init_db(settings)
-
-    family_id = create_account(settings.db_path, "Family")
-    rename_account(settings.db_path, family_id, "Home")
-
-    accounts = list_accounts(settings.db_path)
-    assert [account["name"] for account in accounts] == ["Default", "Home"]
-
-
-def test_rename_account_rejects_duplicate_name(tmp_path):
-    settings = Settings(data_dir=tmp_path, db_path=tmp_path / "t.sqlite")
-    init_db(settings)
-
-    first_id = create_account(settings.db_path, "Family")
-    create_account(settings.db_path, "Travel")
-
-    with pytest.raises(ValueError, match="account name already exists"):
-        rename_account(settings.db_path, first_id, "Travel")
-
-
-def test_delete_account_safety_checks(tmp_path):
-    settings = Settings(data_dir=tmp_path, db_path=tmp_path / "t.sqlite")
-    init_db(settings)
-
-    empty_id = create_account(settings.db_path, "Empty")
-    busy_id = create_account(settings.db_path, "Busy")
-
-    create_txn(
-        settings.db_path,
-        account_id=busy_id,
-        date_str="2026-03-20",
         direction="expense",
         amount_cents=100,
         category="misc",
-        note="x",
+        note="to-delete",
     )
 
-    with pytest.raises(ValueError, match="default account cannot be deleted"):
-        delete_account(settings.db_path, 1)
-
-    with pytest.raises(ValueError, match="account has transactions"):
-        delete_account(settings.db_path, busy_id)
-
-    delete_account(settings.db_path, empty_id)
-    names = [account["name"] for account in list_accounts(settings.db_path)]
-    assert names == ["Default", "Busy"]
-
-
-def test_archive_and_restore_account(tmp_path):
-    settings = Settings(data_dir=tmp_path, db_path=tmp_path / "t.sqlite")
-    init_db(settings)
-
-    family_id = create_account(settings.db_path, "Family")
-    archive_account(settings.db_path, family_id)
-
-    visible_accounts = list_accounts(settings.db_path)
-    assert [account["name"] for account in visible_accounts] == ["Default"]
-
-    all_accounts = list_accounts(settings.db_path, include_archived=True)
-    archived = [account for account in all_accounts if account["id"] == family_id][0]
-    assert archived["archived"] == 1
-
-    restore_account(settings.db_path, family_id)
-    visible_accounts_after_restore = list_accounts(settings.db_path)
-    assert [account["name"] for account in visible_accounts_after_restore] == [
-        "Default",
-        "Family",
-    ]
-
-
-def test_archive_restore_safety_checks(tmp_path):
-    settings = Settings(data_dir=tmp_path, db_path=tmp_path / "t.sqlite")
-    init_db(settings)
-
-    family_id = create_account(settings.db_path, "Family")
-
-    with pytest.raises(ValueError, match="default account cannot be archived"):
-        archive_account(settings.db_path, 1)
-
-    with pytest.raises(ValueError, match="account not found"):
-        archive_account(settings.db_path, 999)
-
-    archive_account(settings.db_path, family_id)
-
-    with pytest.raises(ValueError, match="account already archived"):
-        archive_account(settings.db_path, family_id)
-
-    restore_account(settings.db_path, family_id)
-
-    with pytest.raises(ValueError, match="account is not archived"):
-        restore_account(settings.db_path, family_id)
+    delete_txn(settings.db_path, txn_id, account_id=999)
+    rows = list_txns(settings.db_path, start="2026-03-01", end="2026-03-31")
+    assert rows == []

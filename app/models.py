@@ -4,6 +4,7 @@ from dataclasses import dataclass
 @dataclass(frozen=True)
 class Transaction:
     id: int
+    account_id: int
     date: str
     direction: str
     amount_cents: int

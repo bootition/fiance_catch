@@ -1,0 +1,40 @@
+<tr data-txn-id="{{ txn['id'] }}">
+    <td>{{ txn["date"] }}</td>
+    <td>
+        {% if txn["direction"] == "income" %}
+            <span class="direction-pill direction-income">{{ t["option_income"] }}</span>
+        {% else %}
+            <span class="direction-pill direction-expense">{{ t["option_expense"] }}</span>
+        {% endif %}
+    </td>
+    <td class="amount-cell {% if txn['direction'] == 'income' %}amount-income{% else %}amount-expense{% endif %}">
+        {{ "%.2f"|format(txn["amount_cents"] / 100) }}
+    </td>
+    <td>{{ txn["category"] }}</td>
+    <td>{{ txn["note"] }}</td>
+    <td>
+        <div class="inline-actions">
+            <button
+                type="button"
+                class="button-link"
+                hx-get="/transactions/{{ txn['id'] }}/edit?start={{ start }}&end={{ end }}&lang={{ lang }}"
+                hx-target="closest tr"
+                hx-swap="outerHTML"
+            >
+                {{ t.get("button_edit", "Edit") }}
+            </button>
+            <form
+                method="post"
+                action="/transactions/{{ txn['id'] }}/delete"
+                hx-post="/transactions/{{ txn['id'] }}/delete"
+                hx-target="#ledger-content"
+                hx-swap="innerHTML"
+            >
+                <input type="hidden" name="start" value="{{ start }}">
+                <input type="hidden" name="end" value="{{ end }}">
+                <input type="hidden" name="lang" value="{{ lang }}">
+                <button type="submit" class="tiny-danger">{{ t["button_delete"] }}</button>
+            </form>
+        </div>
+    </td>
+</tr>

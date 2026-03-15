@@ -1,157 +1,104 @@
 <!doctype html>
-<html lang="en">
+<html lang="{{ lang }}">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Local Ledger</title>
+    <title>{{ t["page_title"] }}</title>
     <link rel="stylesheet" href="/static/app.css">
     <script src="https://unpkg.com/htmx.org@1.9.12"></script>
 </head>
 <body>
 <main class="container">
-    <h1>Local Ledger</h1>
+    <header class="page-header">
+        <h1>{{ t["app_title"] }}</h1>
+        <nav class="inline-actions page-nav">
+            <a class="button-link {% if active_page == 'ledger' %}is-active{% endif %}" href="{{ ledger_url }}">{{ t["nav_ledger"] }}</a>
+            <a class="button-link {% if active_page == 'review' %}is-active{% endif %}" href="{{ review_url }}">{{ t["nav_review"] }}</a>
+            <a class="button-link {% if active_page == 'import' %}is-active{% endif %}" href="{{ import_url }}">{{ t["nav_import"] }}</a>
+        </nav>
+    </header>
 
-    <section class="card">
-        <h2>Account and Range</h2>
-        <form method="get" action="/" class="form-grid">
-            <label>
-                Account
-                <select name="account_id" required>
-                    {% for account in accounts %}
-                        <option value="{{ account['id'] }}" {% if account['id'] == account_id %}selected{% endif %}>
-                            {{ account['name'] }}{% if account['archived'] == 1 %} (Archived){% endif %}
-                        </option>
-                    {% endfor %}
-                </select>
-            </label>
-            <label>
-                Start
-                <input type="date" name="start" value="{{ start }}" required>
-            </label>
-            <label>
-                End
-                <input type="date" name="end" value="{{ end }}" required>
-            </label>
-            <label class="checkbox-row">
-                <input
-                    type="checkbox"
-                    name="show_archived"
-                    value="1"
-                    {% if show_archived %}checked{% endif %}
-                >
-                Show archived accounts
-            </label>
-            <div class="inline-actions">
-                <button type="submit">Apply</button>
-                <a
-                    class="button-link"
-                    href="/export.csv?account_id={{ account_id }}&start={{ start }}&end={{ end }}{% if show_archived %}&show_archived=1{% endif %}"
-                >
-                    Export CSV
-                </a>
+    <nav class="inline-actions language-switcher">
+        <span class="muted-text">{{ t["language_label"] }}:</span>
+        <a class="button-link" href="{{ ledger_url|replace('lang=' ~ lang, 'lang=en') }}">{{ t["language_english"] }}</a>
+        <a class="button-link" href="{{ ledger_url|replace('lang=' ~ lang, 'lang=zh-CN') }}">{{ t["language_simplified_chinese"] }}</a>
+    </nav>
+
+    <div class="ledger-workspace">
+        <section class="card card-emphasis">
+            <div class="section-head">
+                <h2>{{ t["section_add_transaction"] }}</h2>
             </div>
-        </form>
+            <form
+                method="post"
+                action="/transactions"
+                class="form-grid entry-form"
+                hx-post="/transactions"
+                hx-target="#ledger-content"
+                hx-swap="innerHTML"
+            >
+                <label>
+                    {{ t["label_date"] }}
+                    <input type="date" name="date" required>
+                </label>
+                <label>
+                    {{ t["label_direction"] }}
+                    <select name="direction" required>
+                        <option value="expense">{{ t["option_expense"] }}</option>
+                        <option value="income">{{ t["option_income"] }}</option>
+                    </select>
+                </label>
+                <label>
+                    {{ t["label_amount"] }}
+                    <input type="text" name="amount" placeholder="{{ t['placeholder_amount'] }}" required>
+                </label>
+                <label>
+                    {{ t["label_category"] }}
+                    <input type="text" name="category" list="category-options" required>
+                </label>
+                <datalist id="category-options">
+                    {% for category_option in category_options %}
+                        <option value="{{ category_option }}"></option>
+                    {% endfor %}
+                </datalist>
+                <label class="full-width">
+                    {{ t["label_note"] }}
+                    <input type="text" name="note">
+                </label>
 
-        <form method="post" action="/accounts" class="inline-form">
-            <label>
-                New Account
-                <input type="text" name="name" placeholder="e.g. Family" required>
-            </label>
-            <input type="hidden" name="start" value="{{ start }}">
-            <input type="hidden" name="end" value="{{ end }}">
-            {% if show_archived %}<input type="hidden" name="show_archived" value="1">{% endif %}
-            <button type="submit">Create Account</button>
-        </form>
+                <input type="hidden" name="start" value="{{ start }}">
+                <input type="hidden" name="end" value="{{ end }}">
+                <input type="hidden" name="lang" value="{{ lang }}">
+                <button type="submit" class="primary-action">{{ t["button_save"] }}</button>
+            </form>
+        </section>
 
-        <form method="post" action="/accounts/{{ account_id }}/rename" class="inline-form">
-            <label>
-                Rename Selected
-                <input type="text" name="name" value="{{ active_account_name }}" required>
-            </label>
-            <input type="hidden" name="start" value="{{ start }}">
-            <input type="hidden" name="end" value="{{ end }}">
-            {% if show_archived %}<input type="hidden" name="show_archived" value="1">{% endif %}
-            <button type="submit">Rename</button>
-        </form>
+        <aside class="card card-secondary utility-card">
+            <h2>{{ t["section_account_and_range"] }}</h2>
+            <form method="get" action="/" class="form-grid compact-form">
+                <label>
+                    {{ t["label_start"] }}
+                    <input type="date" name="start" value="{{ start }}" required>
+                </label>
+                <label>
+                    {{ t["label_end"] }}
+                    <input type="date" name="end" value="{{ end }}" required>
+                </label>
+                <input type="hidden" name="lang" value="{{ lang }}">
+                <div class="inline-actions full-width">
+                    <button type="submit" class="secondary">{{ t["button_apply"] }}</button>
+                    <a
+                        class="button-link quiet-link"
+                        href="/export.csv?start={{ start }}&end={{ end }}&lang={{ lang }}"
+                    >
+                        {{ t["button_export_csv"] }}
+                    </a>
+                </div>
+            </form>
+        </aside>
+    </div>
 
-        {% if not is_default_account and not is_archived_account %}
-        <form method="post" action="/accounts/{{ account_id }}/archive" class="inline-form">
-            <input type="hidden" name="start" value="{{ start }}">
-            <input type="hidden" name="end" value="{{ end }}">
-            {% if show_archived %}<input type="hidden" name="show_archived" value="1">{% endif %}
-            <button type="submit">Archive Selected Account</button>
-        </form>
-        {% endif %}
-
-        {% if is_archived_account %}
-        <form method="post" action="/accounts/{{ account_id }}/restore" class="inline-form">
-            <input type="hidden" name="start" value="{{ start }}">
-            <input type="hidden" name="end" value="{{ end }}">
-            {% if show_archived %}<input type="hidden" name="show_archived" value="1">{% endif %}
-            <button type="submit">Restore Selected Account</button>
-        </form>
-        {% endif %}
-
-        {% if not is_default_account %}
-        <form
-            method="post"
-            action="/accounts/{{ account_id }}/delete"
-            class="inline-form"
-            onsubmit="return confirm('Delete this account? It must have no transactions.');"
-        >
-            <input type="hidden" name="start" value="{{ start }}">
-            <input type="hidden" name="end" value="{{ end }}">
-            {% if show_archived %}<input type="hidden" name="show_archived" value="1">{% endif %}
-            <button type="submit" class="danger">Delete Selected Account</button>
-        </form>
-        {% endif %}
-    </section>
-
-    <section class="card">
-        <h2>Add Transaction</h2>
-        <form
-            method="post"
-            action="/transactions"
-            class="form-grid"
-            hx-post="/transactions"
-            hx-target="#ledger-content"
-            hx-swap="innerHTML"
-        >
-            <label>
-                Date
-                <input type="date" name="date" required {% if is_archived_account %}disabled{% endif %}>
-            </label>
-            <label>
-                Direction
-                <select name="direction" required {% if is_archived_account %}disabled{% endif %}>
-                    <option value="expense">Expense</option>
-                    <option value="income">Income</option>
-                </select>
-            </label>
-            <label>
-                Amount
-                <input type="text" name="amount" placeholder="12.34" required {% if is_archived_account %}disabled{% endif %}>
-            </label>
-            <label>
-                Category
-                <input type="text" name="category" required {% if is_archived_account %}disabled{% endif %}>
-            </label>
-            <label class="full-width">
-                Note
-                <input type="text" name="note" required {% if is_archived_account %}disabled{% endif %}>
-            </label>
-            <input type="hidden" name="account_id" value="{{ account_id }}">
-            <input type="hidden" name="start" value="{{ start }}">
-            <input type="hidden" name="end" value="{{ end }}">
-            {% if show_archived %}<input type="hidden" name="show_archived" value="1">{% endif %}
-            <button type="submit" {% if is_archived_account %}disabled{% endif %}>Save</button>
-        </form>
-        {% if is_archived_account %}
-            <p class="note-text">This account is archived. Restore it to add or delete transactions.</p>
-        {% endif %}
-    </section>
-
-    <section id="ledger-content" class="grid">
+    <section id="ledger-content" class="grid ledger-content-grid">
         {% include "_summary.html" %}
         {% include "_transactions_table.html" %}
     </section>

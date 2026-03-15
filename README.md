@@ -25,31 +25,22 @@ python -m uvicorn app.main:app --reload
 
 ## Backup and export
 
-- CSV export (for selected account and current filter range):
-  - Open `/export.csv?account_id=<id>&start=YYYY-MM-DD&end=YYYY-MM-DD`
-  - Example: `/export.csv?account_id=1&start=2026-02-01&end=2026-02-29`
+- CSV export (for current date range in single-ledger mode):
+  - Open `/export.csv?start=YYYY-MM-DD&end=YYYY-MM-DD`
+  - Example: `/export.csv?start=2026-02-01&end=2026-02-29`
 - Full backup:
   - Stop the server.
   - Copy `.data/ledger.sqlite` to your backup location.
 
-## Multi-account foundation
+## Single-ledger mode
 
-- `accounts` table is included with a default account (`id=1`, name `Default`).
-- Transactions are scoped by `account_id` for list/create/delete/summary/export.
-- UI supports account switching, create, rename, and guarded delete.
-- Accounts support archive/restore, and archived accounts are hidden by default.
+- Product behavior is single-ledger: all transactions are shown together, with date-range filtering.
+- Existing multi-account databases are still supported without destructive migration.
+- Legacy `account_id` and `accounts` data remain in SQLite for compatibility and historical data retention.
+- New transactions are written in single-ledger mode and core flows remain: add/delete/filter/summary/export.
 
 ## MVP limitations
 
-- Local single-user app (no login/auth, account is a bookkeeping scope only).
-- Default account cannot be deleted.
-- Account delete requires zero transactions in that account.
-- Archived accounts are read-only until restored.
+- Local single-user app (no login/auth).
 - No authentication/authorization.
 - No budgets, recurring rules, or reconciliation workflow.
-
-## Next upgrade path
-
-- Add one-click "migrate transactions then delete account" flow.
-- Add transfer transactions between accounts.
-- Add account-level opening balance.

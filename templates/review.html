@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="{{ lang }}">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ t["page_title"] }} - {{ t["review_title"] }}</title>
+    <link rel="stylesheet" href="/static/app.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+</head>
+<body>
+<main class="container">
+    <header class="page-header">
+        <h1>{{ t["review_title"] }}</h1>
+        <nav class="inline-actions page-nav">
+            <a class="button-link {% if active_page == 'ledger' %}is-active{% endif %}" href="{{ ledger_url }}">{{ t["nav_ledger"] }}</a>
+            <a class="button-link {% if active_page == 'review' %}is-active{% endif %}" href="{{ review_url }}">{{ t["nav_review"] }}</a>
+            <a class="button-link {% if active_page == 'import' %}is-active{% endif %}" href="{{ import_url }}">{{ t["nav_import"] }}</a>
+        </nav>
+    </header>
+
+    <nav class="inline-actions language-switcher">
+        <span class="muted-text">{{ t["language_label"] }}:</span>
+        <a class="button-link" href="{{ review_url|replace('lang=' ~ lang, 'lang=en') }}">{{ t["language_english"] }}</a>
+        <a class="button-link" href="{{ review_url|replace('lang=' ~ lang, 'lang=zh-CN') }}">{{ t["language_simplified_chinese"] }}</a>
+    </nav>
+
+    <section class="card review-controls">
+        <div class="inline-actions review-tabs" role="tablist" aria-label="Review period tabs">
+            {% for tab in review_tabs %}
+                <a
+                    class="review-tab {% if tab.key == review_period %}is-active{% endif %}"
+                    href="{{ tab.url }}"
+                    role="tab"
+                    aria-selected="{% if tab.key == review_period %}true{% else %}false{% endif %}"
+                >
+                    {{ tab.label }}
+                </a>
+            {% endfor %}
+        </div>
+    </section>
+
+    <section class="review-grid">
+        <article class="card review-metrics-card">
+            <h2>{{ t["section_summary"] }} - {{ t["summary_account"] }}</h2>
+            <p class="summary-meta">{{ t["review_window"] }}: {{ review_window_start }} {{ t["summary_to"] }} {{ review_window_end }}</p>
+
+            <div class="summary-metrics review-metrics-grid">
+                <div class="metric-card metric-income">
+                    <p class="metric-label">{{ t["summary_income"] }}</p>
+                    <p class="metric-value">{{ "%.2f"|format(review_income_total_cents / 100) }}</p>
+                </div>
+                <div class="metric-card metric-expense">
+                    <p class="metric-label">{{ t["summary_expense"] }}</p>
+                    <p class="metric-value">{{ "%.2f"|format(review_expense_total_cents / 100) }}</p>
+                </div>
+                <div class="metric-card metric-net">
+                    <p class="metric-label">{{ t["review_metric_net"] }}</p>
+                    <p class="metric-value">{{ "%.2f"|format(review_net_consumption_cents / 100) }}</p>
+                </div>
+            </div>
+        </article>
+
+        <article class="card review-chart-card review-line-card">
+            <h2>{{ t["review_line_title"] }}</h2>
+            <div class="chart-wrap">
+                <canvas id="review-line-chart"></canvas>
+            </div>
+        </article>
+
+        <article class="card review-chart-card review-pie-card">
+            <h2>{{ t["review_pie_title"] }}</h2>
+            {% if review_has_pie_data %}
+                <div class="chart-wrap chart-wrap-pie">
+                    <canvas id="review-pie-chart"></canvas>
+                </div>
+            {% else %}
+                <p class="note-text">{{ t["review_no_expense_data"] }}</p>
+            {% endif %}
+        </article>
+    </section>
+</main>
+
+<script>
+    (function () {
+        const lineData = {{ review_line_chart_data | tojson }};
+        const pieData = {{ review_pie_chart_data | tojson }};
+
+        const lineCanvas = document.getElementById("review-line-chart");
+        if (lineCanvas && window.Chart) {
+            new Chart(lineCanvas, {
+                type: "line",
+                data: {
+                    labels: lineData.labels,
+                    datasets: lineData.datasets
+                },
+                options: {
+                    maintainAspectRatio: false,
+                    interaction: {
+                        mode: "index",
+                        intersect: false
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            position: "top"
+                        }
+                    }
+                }
+            });
+        }
+
+        const pieCanvas = document.getElementById("review-pie-chart");
+        if (pieCanvas && window.Chart && pieData.labels.length > 0) {
+            new Chart(pieCanvas, {
+                type: "pie",
+                data: {
+                    labels: pieData.labels,
+                    datasets: [
+                        {
+                            data: pieData.values,
+                            backgroundColor: [
+                                "#0f4c81",
+                                "#1f7a3f",
+                                "#b4232c",
+                                "#5f6a7a",
+                                "#2f697f",
+                                "#8a4f7d",
+                                "#80613f",
+                                "#356f64",
+                                "#9aa5b1"
+                            ]
+                        }
+                    ]
+                },
+                options: {
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: "bottom"
+                        }
+                    }
+                }
+            });
+        }
+    })();
+</script>
+</body>
+</html>

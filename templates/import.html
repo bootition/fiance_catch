@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="{{ lang }}">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ t["page_title"] }} - {{ t["import_title"] }}</title>
+    <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<main class="container">
+    <header class="page-header">
+        <h1>{{ t["import_title"] }}</h1>
+        <nav class="inline-actions page-nav">
+            <a class="button-link {% if active_page == 'ledger' %}is-active{% endif %}" href="{{ ledger_url }}">{{ t["nav_ledger"] }}</a>
+            <a class="button-link {% if active_page == 'review' %}is-active{% endif %}" href="{{ review_url }}">{{ t["nav_review"] }}</a>
+            <a class="button-link {% if active_page == 'import' %}is-active{% endif %}" href="{{ import_url }}">{{ t["nav_import"] }}</a>
+        </nav>
+    </header>
+
+    <nav class="inline-actions language-switcher">
+        <span class="muted-text">{{ t["language_label"] }}:</span>
+        <a class="button-link" href="{{ import_url|replace('lang=' ~ lang, 'lang=en') }}">{{ t["language_english"] }}</a>
+        <a class="button-link" href="{{ import_url|replace('lang=' ~ lang, 'lang=zh-CN') }}">{{ t["language_simplified_chinese"] }}</a>
+    </nav>
+
+    <section class="card card-emphasis">
+        <h2>{{ t["import_title"] }}</h2>
+        <p class="note-text">{{ t["import_placeholder"] }}</p>
+        <p class="note-text">{{ t["import_help"] }}</p>
+
+        <form method="post" action="/import/alipay/preview" enctype="multipart/form-data" class="inline-form">
+            <label>
+                {{ t["import_upload_label"] }}
+                <input type="file" name="file" accept=".csv,text/csv" required>
+            </label>
+            <label>
+                {{ t["import_include_neutral"] }}
+                <select name="include_neutral">
+                    <option value="1">{{ t["import_include_neutral_yes"] }}</option>
+                    <option value="0">{{ t["import_include_neutral_no"] }}</option>
+                </select>
+            </label>
+            <input type="hidden" name="start" value="{{ start }}">
+            <input type="hidden" name="end" value="{{ end }}">
+            <input type="hidden" name="lang" value="{{ lang }}">
+            <button type="submit" class="primary-action">{{ t["import_button"] }}</button>
+        </form>
+    </section>
+
+    {% if has_import_result %}
+    <section class="card">
+        <h2>{{ t["import_result"] }}</h2>
+        <div class="summary-metrics">
+            <div class="metric-card metric-income">
+                <p class="metric-label">{{ t["import_inserted"] }}</p>
+                <p class="metric-value">{{ imported_count }}</p>
+            </div>
+            <div class="metric-card metric-net">
+                <p class="metric-label">{{ t["import_skipped_status"] }}</p>
+                <p class="metric-value">{{ skipped_status_count }}</p>
+            </div>
+            <div class="metric-card metric-net">
+                <p class="metric-label">{{ t["import_skipped_non_cashflow"] }}</p>
+                <p class="metric-value">{{ skipped_non_cashflow_count }}</p>
+            </div>
+            <div class="metric-card metric-expense">
+                <p class="metric-label">{{ t["import_skipped_invalid"] }}</p>
+                <p class="metric-value">{{ invalid_count }}</p>
+            </div>
+        </div>
+
+        {% if undo_delete_token and undo_expected_count > 0 %}
+        <form
+            method="post"
+            action="/transactions/bulk-delete/execute"
+            class="inline-form"
+            onsubmit="return confirm('{{ t["import_undo_button"] }}?');"
+        >
+            <input type="hidden" name="delete_token" value="{{ undo_delete_token }}">
+            <input type="hidden" name="expected_count" value="{{ undo_expected_count }}">
+            <input type="hidden" name="confirm_text" value="DELETE">
+            <input type="hidden" name="page_start" value="{{ start }}">
+            <input type="hidden" name="page_end" value="{{ end }}">
+            <input type="hidden" name="lang" value="{{ lang }}">
+            <button type="submit" class="danger-outline">{{ t["import_undo_button"] }}</button>
+        </form>
+        {% endif %}
+    </section>
+    {% endif %}
+
+    {% if has_delete_result %}
+    <section class="card">
+        <p class="note-text">{{ t["import_deleted"] }}: {{ deleted_count }}</p>
+    </section>
+    {% endif %}
+
+    <section class="card">
+        <h2>{{ t["bulk_delete_title"] }}</h2>
+        <p class="note-text">{{ t["bulk_delete_warning"] }}</p>
+
+        <h3>{{ t["bulk_delete_batches_title"] }}</h3>
+        {% if import_batches %}
+        <form method="post" action="/transactions/bulk-delete/preview" class="inline-form">
+            <input type="hidden" name="response_mode" value="redirect">
+            <input type="hidden" name="page_start" value="{{ start }}">
+            <input type="hidden" name="page_end" value="{{ end }}">
+            <input type="hidden" name="lang" value="{{ lang }}">
+            {% for batch in import_batches %}
+            <label class="checkbox-row">
+                <input type="checkbox" name="batch_ids" value="{{ batch['batch_id'] }}">
+                {{ t["bulk_delete_batch_id"] }}: {{ batch["batch_id"] }} |
+                {{ t["bulk_delete_row_count"] }}: {{ batch["row_count"] }} |
+                {{ t["bulk_delete_date_range"] }}: {{ batch["min_date"] }} ~ {{ batch["max_date"] }}
+            </label>
+            {% endfor %}
+            <button type="submit" class="danger-outline">{{ t["bulk_delete_preview_button"] }}</button>
+        </form>
+        {% else %}
+        <p class="note-text">{{ t["bulk_delete_no_batches"] }}</p>
+        {% endif %}
+
+        <h3>{{ t["bulk_delete_conditions_title"] }}</h3>
+        <form method="post" action="/transactions/bulk-delete/preview" class="form-grid">
+            <input type="hidden" name="response_mode" value="redirect">
+            <input type="hidden" name="page_start" value="{{ start }}">
+            <input type="hidden" name="page_end" value="{{ end }}">
+            <input type="hidden" name="lang" value="{{ lang }}">
+
+            <label>
+                {{ t["label_start"] }}
+                <input type="date" name="start">
+            </label>
+            <label>
+                {{ t["label_end"] }}
+                <input type="date" name="end">
+            </label>
+            <label>
+                {{ t["bulk_delete_filter_direction"] }}
+                <select name="direction">
+                    <option value="">{{ t["bulk_delete_filter_all"] }}</option>
+                    <option value="income">{{ t["option_income"] }}</option>
+                    <option value="expense">{{ t["option_expense"] }}</option>
+                    <option value="neutral">{{ t["option_neutral"] }}</option>
+                </select>
+            </label>
+            <label>
+                {{ t["bulk_delete_filter_category"] }}
+                <input type="text" name="category">
+            </label>
+            <label>
+                {{ t["bulk_delete_filter_note_contains"] }}
+                <input type="text" name="note_contains">
+            </label>
+            <label>
+                {{ t["bulk_delete_filter_imported_only"] }}
+                <select name="imported_only">
+                    <option value="">{{ t["bulk_delete_filter_all"] }}</option>
+                    <option value="1">{{ t["bulk_delete_filter_imported_yes"] }}</option>
+                    <option value="0">{{ t["bulk_delete_filter_imported_no"] }}</option>
+                </select>
+            </label>
+            <label class="checkbox-row full-width">
+                <input type="checkbox" name="allow_delete_all" value="1">
+                {{ t["bulk_delete_allow_delete_all"] }}
+            </label>
+            <button type="submit" class="danger-outline">{{ t["bulk_delete_preview_button"] }}</button>
+        </form>
+    </section>
+
+    {% if has_bulk_preview_result %}
+    <section class="card">
+        <h2>{{ t["bulk_delete_preview_result"] }}</h2>
+        <p>{{ t["bulk_delete_matched_count"] }}: {{ bulk_preview_matched_count }}</p>
+
+        {% if bulk_preview_rows %}
+        <h3>{{ t["bulk_delete_sample"] }}</h3>
+        <table>
+            <thead>
+            <tr>
+                <th>{{ t["table_date"] }}</th>
+                <th>{{ t["table_direction"] }}</th>
+                <th>{{ t["table_amount"] }}</th>
+                <th>{{ t["table_category"] }}</th>
+                <th>{{ t["table_note"] }}</th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for row in bulk_preview_rows %}
+            <tr>
+                <td>{{ row["date"] }}</td>
+                <td>{{ row["direction"] }}</td>
+                <td>{{ "%.2f"|format(row["amount_cents"] / 100) }}</td>
+                <td>{{ row["category"] }}</td>
+                <td>{{ row["note"] }}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
+
+        <form method="post" action="/transactions/bulk-delete/execute" class="inline-form" onsubmit="return confirm('{{ t["bulk_delete_warning"] }}');">
+            <input type="hidden" name="delete_token" value="{{ bulk_preview_token }}">
+            <input type="hidden" name="expected_count" value="{{ bulk_preview_matched_count }}">
+            <input type="hidden" name="page_start" value="{{ start }}">
+            <input type="hidden" name="page_end" value="{{ end }}">
+            <input type="hidden" name="lang" value="{{ lang }}">
+            {% if bulk_preview_requires_delete_all %}
+            <input type="hidden" name="allow_delete_all" value="1">
+            {% endif %}
+
+            <label>
+                {{ t["bulk_delete_confirm_label"] }}
+                <input type="text" name="confirm_text" placeholder="{% if bulk_preview_requires_delete_all %}{{ t['bulk_delete_confirm_all_placeholder'] }}{% else %}{{ t['bulk_delete_confirm_placeholder'] }}{% endif %}" required>
+            </label>
+            <button type="submit" class="danger-outline">{{ t["bulk_delete_execute_button"] }}</button>
+        </form>
+    </section>
+    {% endif %}
+</main>
+</body>
+</html>

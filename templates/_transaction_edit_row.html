@@ -1,0 +1,51 @@
+<tr data-txn-id="{{ txn['id'] }}" class="is-editing">
+    <td colspan="6">
+        <form
+            method="post"
+            action="/transactions/{{ txn['id'] }}"
+            class="form-grid compact-form"
+            hx-post="/transactions/{{ txn['id'] }}"
+            hx-target="#ledger-content"
+            hx-swap="innerHTML"
+        >
+            <label>
+                {{ t["label_date"] }}
+                <input type="date" name="date" value="{{ txn['date'] }}" required>
+            </label>
+            <label>
+                {{ t["label_direction"] }}
+                <select name="direction" required>
+                    <option value="expense" {% if txn["direction"] == "expense" %}selected{% endif %}>{{ t["option_expense"] }}</option>
+                    <option value="income" {% if txn["direction"] == "income" %}selected{% endif %}>{{ t["option_income"] }}</option>
+                </select>
+            </label>
+            <label>
+                {{ t["label_amount"] }}
+                <input type="text" name="amount" value="{{ '%.2f'|format(txn['amount_cents'] / 100) }}" required>
+            </label>
+            <label>
+                {{ t["label_category"] }}
+                <input type="text" name="category" list="category-options" value="{{ txn['category'] }}" required>
+            </label>
+            <label class="full-width">
+                {{ t["label_note"] }}
+                <input type="text" name="note" value="{{ txn['note'] }}">
+            </label>
+            <input type="hidden" name="start" value="{{ start }}">
+            <input type="hidden" name="end" value="{{ end }}">
+            <input type="hidden" name="lang" value="{{ lang }}">
+            <div class="inline-actions full-width">
+                <button type="submit" class="primary-action">{{ t["button_save"] }}</button>
+                <button
+                    type="button"
+                    class="secondary"
+                    hx-get="/transactions/{{ txn['id'] }}/row?start={{ start }}&end={{ end }}&lang={{ lang }}"
+                    hx-target="closest tr"
+                    hx-swap="outerHTML"
+                >
+                    {{ t.get("button_cancel", "Cancel") }}
+                </button>
+            </div>
+        </form>
+    </td>
+</tr>

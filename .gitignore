@@ -8,3 +8,12 @@ progress.md
 task_plan.md
 
 .worktrees/
+
+.pytest-run-*
+pytest-run-*
+.codex-tmp/
+
+plan-financeCatch.prompt.md
+*.bat
+.vscode/
+.pytest_cache/

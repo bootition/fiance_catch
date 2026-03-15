@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="{{ lang }}">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ t["page_title"] }} - {{ t["import_preview_title"] }}</title>
+    <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<main class="container">
+    <header class="page-header">
+        <h1>{{ t["import_preview_title"] }}</h1>
+        <nav class="inline-actions page-nav">
+            <a class="button-link {% if active_page == 'ledger' %}is-active{% endif %}" href="{{ ledger_url }}">{{ t["nav_ledger"] }}</a>
+            <a class="button-link {% if active_page == 'review' %}is-active{% endif %}" href="{{ review_url }}">{{ t["nav_review"] }}</a>
+            <a class="button-link {% if active_page == 'import' %}is-active{% endif %}" href="{{ import_url }}">{{ t["nav_import"] }}</a>
+        </nav>
+    </header>
+
+    <nav class="inline-actions language-switcher">
+        <span class="muted-text">{{ t["language_label"] }}:</span>
+        <a class="button-link" href="{{ preview_url|replace('lang=' ~ lang, 'lang=en') }}">{{ t["language_english"] }}</a>
+        <a class="button-link" href="{{ preview_url|replace('lang=' ~ lang, 'lang=zh-CN') }}">{{ t["language_simplified_chinese"] }}</a>
+    </nav>
+
+    <section class="card">
+        <p class="summary-meta">{{ t["import_preview_session"] }}: {{ import_session_id }} | {{ t["import_preview_status"] }}: {{ import_session_status }}</p>
+        <div class="summary-metrics">
+            <div class="metric-card metric-income">
+                <p class="metric-label">{{ t["import_preview_valid"] }}</p>
+                <p class="metric-value">{{ preview_valid_count }}</p>
+            </div>
+            <div class="metric-card metric-net">
+                <p class="metric-label">{{ t["import_preview_skipped_status"] }}</p>
+                <p class="metric-value">{{ preview_skipped_status_count }}</p>
+            </div>
+            <div class="metric-card metric-expense">
+                <p class="metric-label">{{ t["import_preview_invalid"] }}</p>
+                <p class="metric-value">{{ preview_invalid_count }}</p>
+            </div>
+            <div class="metric-card metric-net">
+                <p class="metric-label">{{ t["import_preview_deleted"] }}</p>
+                <p class="metric-value">{{ preview_deleted_count }}</p>
+            </div>
+            <div class="metric-card metric-income">
+                <p class="metric-label">{{ t["import_preview_selected"] }}</p>
+                <p class="metric-value">{{ preview_selected_count }}</p>
+            </div>
+        </div>
+    </section>
+
+    {% if import_session_status == 'active' %}
+    <section class="card">
+        <form method="post" action="/import/preview/{{ import_session_id }}/bulk-update" class="form-grid">
+            <input type="hidden" name="start" value="{{ start }}">
+            <input type="hidden" name="end" value="{{ end }}">
+            <input type="hidden" name="lang" value="{{ lang }}">
+
+            <label>
+                {{ t["import_preview_target_category"] }}
+                <input type="text" name="target_category">
+            </label>
+            <label>
+                {{ t["import_preview_tag"] }}
+                <input type="text" name="tag">
+            </label>
+            <label>
+                Rule pattern (optional)
+                <input type="text" name="rule_pattern">
+            </label>
+
+            <button type="submit" class="primary-action" name="action" value="set_category">{{ t["import_preview_bulk_set_category"] }}</button>
+            <button type="submit" class="button-link" name="action" value="add_tag">{{ t["import_preview_bulk_add_tag"] }}</button>
+            <button type="submit" class="button-link" name="action" value="create_rule">{{ t["import_preview_create_rule"] }}</button>
+        </form>
+
+        <form method="post" action="/import/preview/{{ import_session_id }}/bulk-delete" class="inline-form" onsubmit="return confirm('{{ t["bulk_delete_warning"] }}');">
+            <input type="hidden" name="start" value="{{ start }}">
+            <input type="hidden" name="end" value="{{ end }}">
+            <input type="hidden" name="lang" value="{{ lang }}">
+            <button type="submit" class="danger-outline">{{ t["import_preview_bulk_delete"] }}</button>
+        </form>
+    </section>
+    {% endif %}
+
+    <section class="card">
+        {% if preview_rows %}
+        <table>
+            <thead>
+            <tr>
+                <th>#</th>
+                <th>{{ t["table_date"] }}</th>
+                <th>{{ t["table_direction"] }}</th>
+                <th>{{ t["table_amount"] }}</th>
+                <th>{{ t["table_category"] }}</th>
+                <th>{{ t["table_note"] }}</th>
+                <th>{{ t["import_preview_tag"] }}</th>
+                <th>{{ t["import_preview_parse_status"] }}</th>
+                <th>{{ t["import_preview_parse_error"] }}</th>
+                <th>{{ t["import_preview_should_import"] }}</th>
+                <th>{{ t["table_action"] }}</th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for row in preview_rows %}
+            <tr>
+                <td>{{ row["row_no"] }}</td>
+                <td>{{ row["date"] if row["date"] else '-' }}</td>
+                <td>{{ row["direction"] if row["direction"] else '-' }}</td>
+                <td>{% if row["amount_cents"] is not none %}{{ "%.2f"|format(row["amount_cents"] / 100) }}{% else %}-{% endif %}</td>
+                <td>
+                    <form method="post" action="/import/preview/{{ import_session_id }}/row/{{ row['id'] }}" class="inline-form">
+                        <input type="text" name="category" value="{{ row['category'] or '' }}">
+                </td>
+                <td>
+                        <input type="text" name="note" value="{{ row['note'] or '' }}">
+                </td>
+                <td>{{ row["tag"] }}</td>
+                <td>{{ row["parse_status_label"] }}</td>
+                <td>{{ row["parse_error"] if row["parse_error"] else '-' }}</td>
+                <td>
+                        <input type="checkbox" name="selected" value="1" {% if row['selected'] and not row['deleted'] %}checked{% endif %} {% if row['deleted'] %}disabled{% endif %}>
+                </td>
+                <td>
+                        <input type="hidden" name="start" value="{{ start }}">
+                        <input type="hidden" name="end" value="{{ end }}">
+                        <input type="hidden" name="lang" value="{{ lang }}">
+                        <button type="submit" class="button-link">{{ t["import_preview_row_save"] }}</button>
+                        {% if not row['deleted'] %}
+                        <button type="submit" class="danger-outline" name="action" value="delete">{{ t["import_preview_row_delete"] }}</button>
+                        {% endif %}
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="note-text">{{ t["import_preview_rows_empty"] }}</p>
+        {% endif %}
+    </section>
+
+    {% if preview_rules %}
+    <section class="card">
+        <h2>{{ t["import_preview_create_rule"] }}</h2>
+        <table>
+            <thead>
+            <tr>
+                <th>Pattern</th>
+                <th>{{ t["import_preview_target_category"] }}</th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for rule in preview_rules %}
+            <tr>
+                <td>{{ rule["match_pattern"] }}</td>
+                <td>{{ rule["target_category"] }}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </section>
+    {% endif %}
+
+    {% if import_session_status == 'active' %}
+    <section class="card inline-actions">
+        <form method="post" action="/import/preview/{{ import_session_id }}/commit" class="inline-form" onsubmit="return confirm('{{ t["import_preview_commit"] }}?');">
+            <input type="hidden" name="start" value="{{ start }}">
+            <input type="hidden" name="end" value="{{ end }}">
+            <input type="hidden" name="lang" value="{{ lang }}">
+            <button type="submit" class="primary-action">{{ t["import_preview_commit"] }}</button>
+        </form>
+        <form method="post" action="/import/preview/{{ import_session_id }}/discard" class="inline-form" onsubmit="return confirm('{{ t["import_preview_discard"] }}?');">
+            <input type="hidden" name="start" value="{{ start }}">
+            <input type="hidden" name="end" value="{{ end }}">
+            <input type="hidden" name="lang" value="{{ lang }}">
+            <button type="submit" class="danger-outline">{{ t["import_preview_discard"] }}</button>
+        </form>
+    </section>
+    {% endif %}
+</main>
+</body>
+</html>
