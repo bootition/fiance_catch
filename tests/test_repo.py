@@ -20,9 +20,16 @@ def test_create_list_delete(tmp_path):
     assert rows[0]["id"] == tid
     assert rows[0]["amount_cents"] == 1234
 
-    delete_txn(settings.db_path, tid)
+    assert delete_txn(settings.db_path, tid) is True
     rows2 = list_txns(settings.db_path, start="2026-02-01", end="2026-02-28")
     assert rows2 == []
+
+
+def test_delete_txn_returns_false_for_missing_row(tmp_path):
+    settings = Settings(data_dir=tmp_path, db_path=tmp_path / "t.sqlite")
+    init_db(settings)
+
+    assert delete_txn(settings.db_path, 999999) is False
 
 
 def test_update_txn_updates_existing_row(tmp_path):
@@ -31,7 +38,6 @@ def test_update_txn_updates_existing_row(tmp_path):
 
     tid = create_txn(
         settings.db_path,
-        account_id=999,
         date_str="2026-02-25",
         direction="expense",
         amount_cents=1234,
@@ -42,7 +48,6 @@ def test_update_txn_updates_existing_row(tmp_path):
     updated = update_txn(
         settings.db_path,
         tid,
-        account_id=2,
         date_str="2026-02-26",
         direction="income",
         amount_cents=5678,

@@ -60,14 +60,5 @@ def _parse_include_neutral(value: str | None) -> bool:
     raise HTTPException(status_code=400, detail="include_neutral must be 0 or 1")
 
 
-def _is_valid_import_session_id(session_id: str) -> bool:
-    return re.fullmatch(r"[0-9a-f]{32}", session_id) is not None
-
-
-def _parse_status_label(parse_status: str, t: dict[str, str]) -> str:
-    key = f"import_preview_status_{parse_status}"
-    return t.get(key, parse_status)
-
-
 def _is_valid_import_batch_id(batch_id: str) -> bool:
     return re.fullmatch(r"[0-9a-f]{32}", batch_id) is not None

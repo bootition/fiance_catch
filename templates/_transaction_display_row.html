@@ -1,4 +1,4 @@
-<tr data-txn-id="{{ txn['id'] }}">
+<tr data-txn-id="{{ txn['id'] }}" class="txn-row">
     <td>{{ txn["date"] }}</td>
     <td>
         {% if txn["direction"] == "income" %}
@@ -17,7 +17,7 @@
             <button
                 type="button"
                 class="button-link"
-                hx-get="/transactions/{{ txn['id'] }}/edit?start={{ start }}&end={{ end }}&lang={{ lang }}"
+                hx-get="/transactions/{{ txn['id'] }}/edit?start={{ start }}&end={{ end }}"
                 hx-target="closest tr"
                 hx-swap="outerHTML"
             >
@@ -32,7 +32,6 @@
             >
                 <input type="hidden" name="start" value="{{ start }}">
                 <input type="hidden" name="end" value="{{ end }}">
-                <input type="hidden" name="lang" value="{{ lang }}">
                 <button type="submit" class="tiny-danger">{{ t["button_delete"] }}</button>
             </form>
         </div>

@@ -1,7 +1,11 @@
 from fastapi import HTTPException
 
 from .importing_shared import _is_valid_import_batch_id
-from .request_parsing import _optional_iso_date, _optional_trimmed
+from .request_parsing import (
+    _optional_iso_date,
+    _optional_trimmed,
+    _validate_range_order,
+)
 
 
 def _parse_bulk_direction(direction: str | None) -> str | None:
@@ -55,9 +59,12 @@ def _build_bulk_delete_filters(
     imported_only: str | None,
     batch_ids: list[str] | None,
 ) -> dict:
+    resolved_start = _optional_iso_date(start, field_name="start")
+    resolved_end = _optional_iso_date(end, field_name="end")
+    _validate_range_order(resolved_start, resolved_end)
     return {
-        "start": _optional_iso_date(start, field_name="start"),
-        "end": _optional_iso_date(end, field_name="end"),
+        "start": resolved_start,
+        "end": resolved_end,
         "direction": _parse_bulk_direction(direction),
         "category": _optional_trimmed(category),
         "note_contains": _optional_trimmed(note_contains),
@@ -76,3 +83,39 @@ def _is_empty_bulk_delete_filters(filters: dict) -> bool:
         and filters.get("imported_only") is None
         and not filters.get("batch_ids")
     )
+
+
+def _unwrap_bulk_preview_token(preview_token: str | None) -> dict:
+    """Resolve a preview token into display-ready preview context.
+
+    Returns a dict with keys rows, matched_count, token, requires_delete_all.
+    All values are safe for template rendering even if token is invalid.
+    """
+    from .importing_shared import _get_bulk_delete_token_payload
+
+    if preview_token is None or not preview_token.strip():
+        return {
+            "rows": [],
+            "matched_count": 0,
+            "token": None,
+            "requires_delete_all": False,
+        }
+
+    payload = _get_bulk_delete_token_payload(preview_token.strip())
+    if payload is None:
+        return {
+            "rows": [],
+            "matched_count": 0,
+            "token": None,
+            "requires_delete_all": False,
+        }
+
+    return {
+        "rows": list(payload.get("sample_rows", []))[:20],
+        "matched_count": int(payload.get("matched_count", 0)),
+        "token": preview_token.strip(),
+        "requires_delete_all": bool(
+            payload.get("allow_delete_all", False)
+            and _is_empty_bulk_delete_filters(payload.get("filters", {}))
+        ),
+    }

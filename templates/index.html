@@ -9,25 +9,24 @@
 </head>
 <body>
 <main class="container">
-    <header class="page-header">
-        <h1>{{ t["app_title"] }}</h1>
+    <header class="page-header page-header-ledger">
+        <div class="title-block">
+            <p class="eyebrow">掌控经济</p>
+            <h1>{{ t["app_title"] }}</h1>
+            <p class="page-subtitle">用清晰界面记录每一笔资金流动。</p>
+        </div>
         <nav class="inline-actions page-nav">
             <a class="button-link {% if active_page == 'ledger' %}is-active{% endif %}" href="{{ ledger_url }}">{{ t["nav_ledger"] }}</a>
             <a class="button-link {% if active_page == 'review' %}is-active{% endif %}" href="{{ review_url }}">{{ t["nav_review"] }}</a>
-            <a class="button-link {% if active_page == 'import' %}is-active{% endif %}" href="{{ import_url }}">{{ t["nav_import"] }}</a>
+            <a class="button-link {% if active_page == 'cleanup' %}is-active{% endif %}" href="{{ cleanup_url }}">{{ t["nav_cleanup"] }}</a>
         </nav>
     </header>
-
-    <nav class="inline-actions language-switcher">
-        <span class="muted-text">{{ t["language_label"] }}:</span>
-        <a class="button-link" href="{{ ledger_url|replace('lang=' ~ lang, 'lang=en') }}">{{ t["language_english"] }}</a>
-        <a class="button-link" href="{{ ledger_url|replace('lang=' ~ lang, 'lang=zh-CN') }}">{{ t["language_simplified_chinese"] }}</a>
-    </nav>
 
     <div class="ledger-workspace">
         <section class="card card-emphasis">
             <div class="section-head">
                 <h2>{{ t["section_add_transaction"] }}</h2>
+                <span class="state-pill">实时录入</span>
             </div>
             <form
                 method="post"
@@ -68,13 +67,13 @@
 
                 <input type="hidden" name="start" value="{{ start }}">
                 <input type="hidden" name="end" value="{{ end }}">
-                <input type="hidden" name="lang" value="{{ lang }}">
                 <button type="submit" class="primary-action">{{ t["button_save"] }}</button>
             </form>
         </section>
 
         <aside class="card card-secondary utility-card">
             <h2>{{ t["section_account_and_range"] }}</h2>
+            <p class="note-text">在同一处筛选时间线并导出当前视图。</p>
             <form method="get" action="/" class="form-grid compact-form">
                 <label>
                     {{ t["label_start"] }}
@@ -84,12 +83,11 @@
                     {{ t["label_end"] }}
                     <input type="date" name="end" value="{{ end }}" required>
                 </label>
-                <input type="hidden" name="lang" value="{{ lang }}">
                 <div class="inline-actions full-width">
                     <button type="submit" class="secondary">{{ t["button_apply"] }}</button>
                     <a
                         class="button-link quiet-link"
-                        href="/export.csv?start={{ start }}&end={{ end }}&lang={{ lang }}"
+                        href="/export.csv?start={{ start }}&end={{ end }}"
                     >
                         {{ t["button_export_csv"] }}
                     </a>

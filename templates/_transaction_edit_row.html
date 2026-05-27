@@ -1,4 +1,4 @@
-<tr data-txn-id="{{ txn['id'] }}" class="is-editing">
+<tr data-txn-id="{{ txn['id'] }}" class="is-editing txn-row-editing">
     <td colspan="6">
         <form
             method="post"
@@ -33,13 +33,12 @@
             </label>
             <input type="hidden" name="start" value="{{ start }}">
             <input type="hidden" name="end" value="{{ end }}">
-            <input type="hidden" name="lang" value="{{ lang }}">
             <div class="inline-actions full-width">
                 <button type="submit" class="primary-action">{{ t["button_save"] }}</button>
                 <button
                     type="button"
                     class="secondary"
-                    hx-get="/transactions/{{ txn['id'] }}/row?start={{ start }}&end={{ end }}&lang={{ lang }}"
+                    hx-get="/transactions/{{ txn['id'] }}/row?start={{ start }}&end={{ end }}"
                     hx-target="closest tr"
                     hx-swap="outerHTML"
                 >

@@ -9,23 +9,21 @@
 </head>
 <body>
 <main class="container">
-    <header class="page-header">
-        <h1>{{ t["review_title"] }}</h1>
+    <header class="page-header page-header-review">
+        <div class="title-block">
+            <p class="eyebrow">趋势洞察</p>
+            <h1>{{ t["review_title"] }}</h1>
+            <p class="page-subtitle">聚焦模式识别，观察收支与项目变化。</p>
+        </div>
         <nav class="inline-actions page-nav">
             <a class="button-link {% if active_page == 'ledger' %}is-active{% endif %}" href="{{ ledger_url }}">{{ t["nav_ledger"] }}</a>
             <a class="button-link {% if active_page == 'review' %}is-active{% endif %}" href="{{ review_url }}">{{ t["nav_review"] }}</a>
-            <a class="button-link {% if active_page == 'import' %}is-active{% endif %}" href="{{ import_url }}">{{ t["nav_import"] }}</a>
+            <a class="button-link {% if active_page == 'cleanup' %}is-active{% endif %}" href="{{ cleanup_url }}">{{ t["nav_cleanup"] }}</a>
         </nav>
     </header>
 
-    <nav class="inline-actions language-switcher">
-        <span class="muted-text">{{ t["language_label"] }}:</span>
-        <a class="button-link" href="{{ review_url|replace('lang=' ~ lang, 'lang=en') }}">{{ t["language_english"] }}</a>
-        <a class="button-link" href="{{ review_url|replace('lang=' ~ lang, 'lang=zh-CN') }}">{{ t["language_simplified_chinese"] }}</a>
-    </nav>
-
     <section class="card review-controls">
-        <div class="inline-actions review-tabs" role="tablist" aria-label="Review period tabs">
+        <div class="inline-actions review-tabs" role="tablist" aria-label="复盘周期标签">
             {% for tab in review_tabs %}
                 <a
                     class="review-tab {% if tab.key == review_period %}is-active{% endif %}"
@@ -37,6 +35,33 @@
                 </a>
             {% endfor %}
         </div>
+
+        <form method="get" action="/review" class="form-grid review-filter-form">
+            <input type="hidden" name="period" value="{{ review_period }}">
+
+            <label>
+                {{ t["review_project_mode_label"] }}
+                <select name="project_mode">
+                    {% for option in review_project_mode_options %}
+                    <option value="{{ option.key }}" {% if option.key == review_project_mode %}selected{% endif %}>{{ option.label }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+
+            <label>
+                {{ t["review_project_label"] }}
+                <select name="project">
+                    <option value=""></option>
+                    {% for project_option in review_projects %}
+                    <option value="{{ project_option }}" {% if project_option == review_project %}selected{% endif %}>{{ project_option }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+
+            <div class="inline-actions full-width">
+                <button type="submit" class="secondary">{{ t["review_apply_filters"] }}</button>
+            </div>
+        </form>
     </section>
 
     <section class="review-grid">
@@ -61,10 +86,24 @@
         </article>
 
         <article class="card review-chart-card review-line-card">
-            <h2>{{ t["review_line_title"] }}</h2>
+            <h2>{{ review_line_title }}</h2>
             <div class="chart-wrap">
                 <canvas id="review-line-chart"></canvas>
             </div>
+            {% if review_line_indicators %}
+            <div class="inline-actions review-indicator-toggles" id="line-indicator-toggles">
+                {% for indicator in review_line_indicators %}
+                <button
+                    type="button"
+                    class="review-indicator-toggle is-active"
+                    data-dataset-key="{{ indicator.key }}"
+                    aria-pressed="true"
+                >
+                    {{ indicator.label }}
+                </button>
+                {% endfor %}
+            </div>
+            {% endif %}
         </article>
 
         <article class="card review-chart-card review-pie-card">
@@ -87,7 +126,7 @@
 
         const lineCanvas = document.getElementById("review-line-chart");
         if (lineCanvas && window.Chart) {
-            new Chart(lineCanvas, {
+            const lineChart = new Chart(lineCanvas, {
                 type: "line",
                 data: {
                     labels: lineData.labels,
@@ -111,6 +150,30 @@
                     }
                 }
             });
+
+            const togglesRoot = document.getElementById("line-indicator-toggles");
+            if (togglesRoot) {
+                const datasetByKey = new Map();
+                for (let idx = 0; idx < lineData.datasets.length; idx += 1) {
+                    datasetByKey.set(lineData.datasets[idx].datasetKey, idx);
+                }
+                const toggleButtons = togglesRoot.querySelectorAll("[data-dataset-key]");
+                for (const button of toggleButtons) {
+                    button.addEventListener("click", function () {
+                        const datasetKey = button.getAttribute("data-dataset-key");
+                        const datasetIndex = datasetByKey.get(datasetKey);
+                        if (datasetIndex === undefined) {
+                            return;
+                        }
+                        const dataset = lineChart.data.datasets[datasetIndex];
+                        const isHidden = dataset.hidden === true;
+                        dataset.hidden = !isHidden;
+                        button.classList.toggle("is-active", isHidden);
+                        button.setAttribute("aria-pressed", isHidden ? "true" : "false");
+                        lineChart.update();
+                    });
+                }
+            }
         }
 
         const pieCanvas = document.getElementById("review-pie-chart");

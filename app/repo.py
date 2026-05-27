@@ -1,7 +1,12 @@
 import sqlite3
-from uuid import uuid4
 
 from .db import connect
+
+
+# ── Account CRUD (retained for schema compatibility — no UI routes) ──
+# These functions preserve the accounts table contract and are exercised
+# by tests/test_repo_accounts.py. They are not called from any active
+# route. The accounts router was removed in the single-ledger simplification.
 
 
 def list_accounts(db_path, *, include_archived: bool = False):
@@ -146,7 +151,6 @@ def restore_account(db_path, account_id: int) -> None:
 def create_txn(
     db_path,
     *,
-    account_id: int = 1,
     date_str,
     direction,
     amount_cents,
@@ -155,7 +159,6 @@ def create_txn(
     source_txn_id: str | None = None,
     import_batch_id: str | None = None,
 ) -> int:
-    _ = account_id
     with connect(db_path) as conn:
         cur = conn.execute(
             """
@@ -183,530 +186,6 @@ def create_txn(
             ),
         )
         return int(cur.lastrowid)
-
-
-def create_import_txn(
-    db_path,
-    *,
-    date_str: str,
-    direction: str,
-    amount_cents: int,
-    category: str,
-    note: str,
-    source_txn_id: str | None,
-    import_batch_id: str,
-) -> None:
-    with connect(db_path) as conn:
-        conn.execute(
-            """
-            INSERT INTO transactions(
-              account_id,
-              date,
-              direction,
-              amount_cents,
-              category,
-              note,
-              source_txn_id,
-              import_batch_id
-            )
-            VALUES (1, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                date_str,
-                direction,
-                amount_cents,
-                category,
-                note,
-                source_txn_id,
-                import_batch_id,
-            ),
-        )
-
-
-def create_import_session(
-    db_path,
-    *,
-    source_name: str,
-    lang: str,
-    include_neutral: bool,
-) -> str:
-    session_id = uuid4().hex
-    with connect(db_path) as conn:
-        conn.execute(
-            """
-            INSERT INTO import_sessions(
-              id,
-              source_name,
-              lang,
-              status,
-              include_neutral
-            )
-            VALUES (?, ?, ?, 'active', ?)
-            """,
-            (
-                session_id,
-                source_name.strip() or "alipay.csv",
-                lang,
-                1 if include_neutral else 0,
-            ),
-        )
-    return session_id
-
-
-def get_import_session(db_path, session_id: str):
-    with connect(db_path) as conn:
-        return conn.execute(
-            """
-            SELECT
-              id,
-              created_at,
-              source_name,
-              lang,
-              status,
-              include_neutral
-            FROM import_sessions
-            WHERE id = ?
-            """,
-            (session_id,),
-        ).fetchone()
-
-
-def insert_import_rows(db_path, session_id: str, rows: list[dict]) -> int:
-    if not rows:
-        return 0
-
-    with connect(db_path) as conn:
-        conn.execute("BEGIN IMMEDIATE")
-        conn.executemany(
-            """
-            INSERT INTO import_rows(
-              session_id,
-              row_no,
-              date,
-              direction,
-              amount_cents,
-              category,
-              raw_category,
-              note,
-              status_text,
-              parse_status,
-              parse_error,
-              source_txn_id,
-              tag,
-              selected,
-              deleted
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            [
-                (
-                    session_id,
-                    int(row["row_no"]),
-                    row.get("date"),
-                    row.get("direction"),
-                    row.get("amount_cents"),
-                    row.get("category"),
-                    row.get("raw_category"),
-                    row.get("note"),
-                    row.get("status_text") or "",
-                    row["parse_status"],
-                    row.get("parse_error") or "",
-                    row.get("source_txn_id"),
-                    row.get("tag") or "",
-                    int(row.get("selected", 0)),
-                    int(row.get("deleted", 0)),
-                )
-                for row in rows
-            ],
-        )
-    return len(rows)
-
-
-def list_import_rows(db_path, session_id: str) -> list[dict]:
-    with connect(db_path) as conn:
-        rows = conn.execute(
-            """
-            SELECT
-              id,
-              session_id,
-              row_no,
-              date,
-              direction,
-              amount_cents,
-              category,
-              raw_category,
-              note,
-              status_text,
-              parse_status,
-              parse_error,
-              source_txn_id,
-              tag,
-              selected,
-              deleted
-            FROM import_rows
-            WHERE session_id = ?
-            ORDER BY row_no ASC, id ASC
-            """,
-            (session_id,),
-        ).fetchall()
-        return [dict(row) for row in rows]
-
-
-def get_import_preview_counts(db_path, session_id: str) -> dict[str, int]:
-    with connect(db_path) as conn:
-        row = conn.execute(
-            """
-            SELECT
-              COALESCE(SUM(CASE WHEN parse_status = 'valid' AND deleted = 0 THEN 1 ELSE 0 END), 0) AS valid_count,
-              COALESCE(SUM(CASE WHEN parse_status = 'skipped_status' AND deleted = 0 THEN 1 ELSE 0 END), 0) AS skipped_status_count,
-              COALESCE(SUM(CASE WHEN parse_status = 'invalid' AND deleted = 0 THEN 1 ELSE 0 END), 0) AS invalid_count,
-              COALESCE(SUM(CASE WHEN deleted = 1 THEN 1 ELSE 0 END), 0) AS deleted_count,
-              COALESCE(SUM(CASE WHEN selected = 1 AND deleted = 0 THEN 1 ELSE 0 END), 0) AS selected_count
-            FROM import_rows
-            WHERE session_id = ?
-            """,
-            (session_id,),
-        ).fetchone()
-
-    if row is None:
-        return {
-            "valid_count": 0,
-            "skipped_status_count": 0,
-            "invalid_count": 0,
-            "deleted_count": 0,
-            "selected_count": 0,
-        }
-
-    return {
-        "valid_count": int(row["valid_count"]),
-        "skipped_status_count": int(row["skipped_status_count"]),
-        "invalid_count": int(row["invalid_count"]),
-        "deleted_count": int(row["deleted_count"]),
-        "selected_count": int(row["selected_count"]),
-    }
-
-
-def update_import_row(
-    db_path,
-    *,
-    session_id: str,
-    row_id: int,
-    category: str,
-    note: str,
-    selected: bool,
-    deleted: bool,
-) -> bool:
-    with connect(db_path) as conn:
-        conn.execute("BEGIN IMMEDIATE")
-        active_session = conn.execute(
-            """
-            SELECT 1
-            FROM import_sessions
-            WHERE id = ? AND status = 'active'
-            """,
-            (session_id,),
-        ).fetchone()
-        if active_session is None:
-            return False
-
-        cur = conn.execute(
-            """
-            UPDATE import_rows
-            SET
-              category = ?,
-              note = ?,
-              selected = ?,
-              deleted = ?
-            WHERE id = ? AND session_id = ?
-            """,
-            (
-                category,
-                note,
-                1 if selected else 0,
-                1 if deleted else 0,
-                row_id,
-                session_id,
-            ),
-        )
-        return int(cur.rowcount) > 0
-
-
-def bulk_set_category_for_selected_rows(
-    db_path,
-    *,
-    session_id: str,
-    target_category: str,
-) -> int:
-    with connect(db_path) as conn:
-        conn.execute("BEGIN IMMEDIATE")
-        cur = conn.execute(
-            """
-            UPDATE import_rows
-            SET category = ?
-            WHERE
-              session_id = ?
-              AND selected = 1
-              AND deleted = 0
-              AND parse_status = 'valid'
-            """,
-            (target_category, session_id),
-        )
-        return int(cur.rowcount)
-
-
-def bulk_set_tag_for_selected_rows(
-    db_path,
-    *,
-    session_id: str,
-    tag: str,
-) -> int:
-    with connect(db_path) as conn:
-        conn.execute("BEGIN IMMEDIATE")
-        cur = conn.execute(
-            """
-            UPDATE import_rows
-            SET tag = ?
-            WHERE
-              session_id = ?
-              AND selected = 1
-              AND deleted = 0
-            """,
-            (tag, session_id),
-        )
-        return int(cur.rowcount)
-
-
-def bulk_delete_selected_import_rows(db_path, *, session_id: str) -> int:
-    with connect(db_path) as conn:
-        conn.execute("BEGIN IMMEDIATE")
-        cur = conn.execute(
-            """
-            UPDATE import_rows
-            SET deleted = 1, selected = 0
-            WHERE
-              session_id = ?
-              AND selected = 1
-              AND deleted = 0
-            """,
-            (session_id,),
-        )
-        return int(cur.rowcount)
-
-
-def list_category_rules(db_path, *, enabled_only: bool = True) -> list[dict]:
-    with connect(db_path) as conn:
-        if enabled_only:
-            rows = conn.execute(
-                """
-                SELECT id, match_pattern, target_category, enabled, created_at
-                FROM category_rules
-                WHERE enabled = 1
-                ORDER BY id ASC
-                """
-            ).fetchall()
-        else:
-            rows = conn.execute(
-                """
-                SELECT id, match_pattern, target_category, enabled, created_at
-                FROM category_rules
-                ORDER BY enabled DESC, id ASC
-                """
-            ).fetchall()
-    return [dict(row) for row in rows]
-
-
-def create_category_rule(db_path, *, match_pattern: str, target_category: str) -> None:
-    normalized_pattern = match_pattern.strip()
-    normalized_category = target_category.strip()
-    if not normalized_pattern:
-        raise ValueError("match_pattern required")
-    if not normalized_category:
-        raise ValueError("target_category required")
-
-    with connect(db_path) as conn:
-        conn.execute(
-            """
-            INSERT INTO category_rules(match_pattern, target_category, enabled)
-            VALUES (?, ?, 1)
-            ON CONFLICT(match_pattern, target_category)
-            DO UPDATE SET enabled = 1
-            """,
-            (normalized_pattern, normalized_category),
-        )
-
-
-def create_category_rules_from_selected_rows(
-    db_path,
-    *,
-    session_id: str,
-    target_category: str,
-) -> int:
-    normalized_category = target_category.strip()
-    if not normalized_category:
-        raise ValueError("target_category required")
-
-    with connect(db_path) as conn:
-        conn.execute("BEGIN IMMEDIATE")
-        rows = conn.execute(
-            """
-            SELECT DISTINCT TRIM(raw_category) AS pattern
-            FROM import_rows
-            WHERE
-              session_id = ?
-              AND selected = 1
-              AND deleted = 0
-              AND parse_status = 'valid'
-              AND TRIM(raw_category) <> ''
-            ORDER BY pattern ASC
-            """,
-            (session_id,),
-        ).fetchall()
-
-        patterns = [str(row["pattern"]) for row in rows]
-        if not patterns:
-            return 0
-
-        conn.executemany(
-            """
-            INSERT INTO category_rules(match_pattern, target_category, enabled)
-            VALUES (?, ?, 1)
-            ON CONFLICT(match_pattern, target_category)
-            DO UPDATE SET enabled = 1
-            """,
-            [(pattern, normalized_category) for pattern in patterns],
-        )
-        return len(patterns)
-
-
-def commit_import_session(db_path, *, session_id: str) -> dict:
-    with connect(db_path) as conn:
-        conn.execute("BEGIN IMMEDIATE")
-
-        session = conn.execute(
-            """
-            SELECT id, status
-            FROM import_sessions
-            WHERE id = ?
-            """,
-            (session_id,),
-        ).fetchone()
-        if session is None:
-            raise ValueError("import session not found")
-        if str(session["status"]) != "active":
-            raise ValueError("import session not active")
-
-        summary = conn.execute(
-            """
-            SELECT
-              COALESCE(SUM(CASE WHEN deleted = 1 THEN 1 ELSE 0 END), 0) AS deleted_count,
-              COALESCE(SUM(CASE WHEN deleted = 0 AND parse_status = 'valid' AND selected = 1 THEN 1 ELSE 0 END), 0) AS selected_valid_count,
-              COALESCE(SUM(CASE WHEN deleted = 0 AND NOT (parse_status = 'valid' AND selected = 1) THEN 1 ELSE 0 END), 0) AS skipped_count,
-              COALESCE(SUM(CASE WHEN deleted = 0 AND parse_status = 'skipped_status' THEN 1 ELSE 0 END), 0) AS skipped_status_count,
-              COALESCE(SUM(CASE WHEN deleted = 0 AND parse_status = 'invalid' THEN 1 ELSE 0 END), 0) AS invalid_count,
-              COALESCE(SUM(CASE WHEN deleted = 0 AND parse_status = 'valid' THEN 1 ELSE 0 END), 0) AS valid_count,
-              COALESCE(SUM(CASE WHEN deleted = 0 AND selected = 1 THEN 1 ELSE 0 END), 0) AS selected_count
-            FROM import_rows
-            WHERE session_id = ?
-            """,
-            (session_id,),
-        ).fetchone()
-
-        rows = conn.execute(
-            """
-            SELECT date, direction, amount_cents, category, note, source_txn_id
-            FROM import_rows
-            WHERE
-              session_id = ?
-              AND parse_status = 'valid'
-              AND selected = 1
-              AND deleted = 0
-            ORDER BY row_no ASC, id ASC
-            """,
-            (session_id,),
-        ).fetchall()
-
-        import_batch_id: str | None = None
-        if rows:
-            import_batch_id = uuid4().hex
-            conn.executemany(
-                """
-                INSERT INTO transactions(
-                  account_id,
-                  date,
-                  direction,
-                  amount_cents,
-                  category,
-                  note,
-                  source_txn_id,
-                  import_batch_id
-                )
-                VALUES (1, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                [
-                    (
-                        row["date"],
-                        row["direction"],
-                        int(row["amount_cents"]),
-                        row["category"],
-                        row["note"],
-                        row["source_txn_id"],
-                        import_batch_id,
-                    )
-                    for row in rows
-                ],
-            )
-
-        conn.execute(
-            """
-            UPDATE import_sessions
-            SET status = 'committed'
-            WHERE id = ?
-            """,
-            (session_id,),
-        )
-
-    assert summary is not None
-    return {
-        "imported_count": len(rows),
-        "skipped_count": int(summary["skipped_count"]),
-        "deleted_count": int(summary["deleted_count"]),
-        "valid_count": int(summary["valid_count"]),
-        "selected_count": int(summary["selected_count"]),
-        "skipped_status_count": int(summary["skipped_status_count"]),
-        "invalid_count": int(summary["invalid_count"]),
-        "import_batch_id": import_batch_id,
-    }
-
-
-def discard_import_session(db_path, *, session_id: str) -> int:
-    with connect(db_path) as conn:
-        conn.execute("BEGIN IMMEDIATE")
-        session = conn.execute(
-            """
-            SELECT id, status
-            FROM import_sessions
-            WHERE id = ?
-            """,
-            (session_id,),
-        ).fetchone()
-        if session is None:
-            raise ValueError("import session not found")
-        if str(session["status"]) != "active":
-            raise ValueError("import session not active")
-
-        deleted_rows = conn.execute(
-            "DELETE FROM import_rows WHERE session_id = ?",
-            (session_id,),
-        ).rowcount
-        conn.execute(
-            """
-            UPDATE import_sessions
-            SET status = 'discarded'
-            WHERE id = ?
-            """,
-            (session_id,),
-        )
-        return int(deleted_rows)
 
 
 def _build_bulk_delete_where(filters: dict) -> tuple[str, list]:
@@ -834,21 +313,7 @@ def delete_bulk_by_filters(db_path, filters: dict) -> int:
         return int(cur.rowcount)
 
 
-def delete_bulk_by_batch_ids(db_path, batch_ids: list[str]) -> int:
-    return delete_bulk_by_filters(db_path, {"batch_ids": batch_ids})
-
-
-def delete_txns_by_import_batch(db_path, batch_id: str) -> int:
-    with connect(db_path) as conn:
-        cur = conn.execute(
-            "DELETE FROM transactions WHERE import_batch_id = ?",
-            (batch_id,),
-        )
-        return int(cur.rowcount)
-
-
-def list_txns(db_path, *, account_id: int | None = None, start: str, end: str):
-    _ = account_id
+def list_txns(db_path, *, start: str, end: str):
     with connect(db_path) as conn:
         cur = conn.execute(
             """
@@ -861,8 +326,7 @@ def list_txns(db_path, *, account_id: int | None = None, start: str, end: str):
         return cur.fetchall()
 
 
-def get_txn(db_path, txn_id: int, *, account_id: int | None = None):
-    _ = account_id
+def get_txn(db_path, txn_id: int):
     with connect(db_path) as conn:
         return conn.execute(
             """
@@ -873,8 +337,7 @@ def get_txn(db_path, txn_id: int, *, account_id: int | None = None):
         ).fetchone()
 
 
-def list_categories(db_path, *, account_id: int = 1) -> list[str]:
-    _ = account_id
+def list_categories(db_path) -> list[str]:
     with connect(db_path) as conn:
         cur = conn.execute(
             """
@@ -891,14 +354,12 @@ def update_txn(
     db_path,
     txn_id: int,
     *,
-    account_id: int | None = None,
     date_str: str,
     direction: str,
     amount_cents: int,
     category: str,
     note: str,
 ) -> bool:
-    _ = account_id
     with connect(db_path) as conn:
         cur = conn.execute(
             """
@@ -924,19 +385,16 @@ def update_txn(
         return int(cur.rowcount) > 0
 
 
-def delete_txn(db_path, txn_id: int, *, account_id: int | None = None) -> None:
-    _ = account_id
+def delete_txn(db_path, txn_id: int) -> bool:
     with connect(db_path) as conn:
-        conn.execute(
+        cur = conn.execute(
             "DELETE FROM transactions WHERE id = ?",
             (txn_id,),
         )
+        return int(cur.rowcount) > 0
 
 
-def get_summary(
-    db_path, *, account_id: int | None = None, start: str, end: str
-) -> dict:
-    _ = account_id
+def get_summary(db_path, *, start: str, end: str) -> dict:
     with connect(db_path) as conn:
         totals = conn.execute(
             """

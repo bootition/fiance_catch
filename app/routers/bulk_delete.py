@@ -1,7 +1,6 @@
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
 
-from ..i18n import parse_lang
 from ..repo import delete_bulk_by_filters, preview_bulk_delete
 from ..router_support.bulk_delete_shared import (
     _build_bulk_delete_filters,
@@ -12,7 +11,7 @@ from ..router_support.importing_shared import (
     _get_bulk_delete_token_payload,
     _issue_bulk_delete_token,
 )
-from ..router_support.navigation import _import_url
+from ..router_support.navigation import _cleanup_url
 from ..router_support.request_parsing import _resolve_range
 from ..router_support.settings_access import current_settings
 
@@ -30,14 +29,12 @@ def preview_bulk_delete_route(
     note_contains: str | None = Form(default=None),
     imported_only: str | None = Form(default=None),
     allow_delete_all: str | None = Form(default=None),
-    lang: str | None = Form(default=None),
     page_start: str | None = Form(default=None),
     page_end: str | None = Form(default=None),
     response_mode: str | None = Form(default=None),
     batch_ids: list[str] = Form(default=[]),
 ):
     _ = request
-    resolved_lang = parse_lang(lang)
     resolved_page_start, resolved_page_end = _resolve_range(page_start, page_end)
 
     filters = _build_bulk_delete_filters(
@@ -67,10 +64,9 @@ def preview_bulk_delete_route(
 
     if response_mode == "redirect":
         return RedirectResponse(
-            url=_import_url(
+            url=_cleanup_url(
                 resolved_page_start,
                 resolved_page_end,
-                resolved_lang,
                 preview_token=delete_token,
             ),
             status_code=303,
@@ -89,11 +85,9 @@ def execute_bulk_delete_route(
     confirm_text: str = Form(...),
     expected_count: int = Form(...),
     allow_delete_all: str | None = Form(default=None),
-    lang: str | None = Form(default=None),
     page_start: str | None = Form(default=None),
     page_end: str | None = Form(default=None),
 ):
-    resolved_lang = parse_lang(lang)
     resolved_page_start, resolved_page_end = _resolve_range(page_start, page_end)
 
     payload = _get_bulk_delete_token_payload(delete_token.strip())
@@ -125,10 +119,9 @@ def execute_bulk_delete_route(
     _drop_bulk_delete_token(delete_token.strip())
 
     return RedirectResponse(
-        url=_import_url(
+        url=_cleanup_url(
             resolved_page_start,
             resolved_page_end,
-            resolved_lang,
             deleted=deleted_count,
         ),
         status_code=303,

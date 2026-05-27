@@ -280,6 +280,19 @@ def _rebuild_transactions_table(conn: sqlite3.Connection) -> None:
 def init_db(settings: Settings) -> None:
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     with connect(settings.db_path) as conn:
+        # Recover from a previous interrupted migration: if legacy tables
+        # exist, the original tables were already renamed. Restore from
+        # legacy if the primary table is missing, otherwise clean up.
+        legacy_accounts = _table_exists(conn, "accounts__legacy")
+        legacy_transactions = _table_exists(conn, "transactions__legacy")
+        if legacy_accounts and not _table_exists(conn, "accounts"):
+            conn.execute("ALTER TABLE accounts__legacy RENAME TO accounts")
+        elif legacy_accounts:
+            conn.execute("DROP TABLE IF EXISTS accounts__legacy")
+        if legacy_transactions and not _table_exists(conn, "transactions"):
+            conn.execute("ALTER TABLE transactions__legacy RENAME TO transactions")
+        elif legacy_transactions:
+            conn.execute("DROP TABLE IF EXISTS transactions__legacy")
         _create_accounts_table(conn)
         if not _column_exists(conn, "accounts", "archived"):
             conn.execute(

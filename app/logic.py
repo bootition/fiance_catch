@@ -1,8 +1,12 @@
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
+ALL_DIRECTIONS = frozenset({"income", "expense", "neutral"})
+LEDGER_DIRECTIONS = frozenset({"income", "expense"})
+
 
 def validate_direction(s: str) -> str:
-    if s not in {"income", "expense"}:
+    """Validate manual-entry direction (neutral not allowed via ledger form)."""
+    if s not in LEDGER_DIRECTIONS:
         raise ValueError("direction must be income or expense")
     return s
 

@@ -18,7 +18,6 @@ def test_create_txn_always_writes_default_account(tmp_path):
 
     txn_id = create_txn(
         settings.db_path,
-        account_id=2,
         date_str="2026-03-10",
         direction="expense",
         amount_cents=100,
@@ -56,24 +55,14 @@ def test_list_txns_get_summary_and_categories_ignore_account_scope(tmp_path):
     conn.commit()
     conn.close()
 
-    rows = list_txns(
-        settings.db_path,
-        account_id=999,
-        start="2026-03-01",
-        end="2026-03-31",
-    )
+    rows = list_txns(settings.db_path, start="2026-03-01", end="2026-03-31")
     assert len(rows) == 2
 
-    summary = get_summary(
-        settings.db_path,
-        account_id=999,
-        start="2026-03-01",
-        end="2026-03-31",
-    )
+    summary = get_summary(settings.db_path, start="2026-03-01", end="2026-03-31")
     assert summary["income_cents"] == 300000
     assert summary["expense_cents"] == 1200
 
-    categories = list_categories(settings.db_path, account_id=999)
+    categories = list_categories(settings.db_path)
     assert categories == ["food", "salary"]
 
 
@@ -83,7 +72,6 @@ def test_delete_txn_removes_row_without_account_scope(tmp_path):
 
     txn_id = create_txn(
         settings.db_path,
-        account_id=1,
         date_str="2026-03-10",
         direction="expense",
         amount_cents=100,
@@ -91,6 +79,6 @@ def test_delete_txn_removes_row_without_account_scope(tmp_path):
         note="to-delete",
     )
 
-    delete_txn(settings.db_path, txn_id, account_id=999)
+    delete_txn(settings.db_path, txn_id)
     rows = list_txns(settings.db_path, start="2026-03-01", end="2026-03-31")
     assert rows == []

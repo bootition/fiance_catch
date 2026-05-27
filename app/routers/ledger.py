@@ -4,7 +4,7 @@ from io import StringIO
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
-from ..i18n import TRANSLATIONS, parse_lang
+from ..i18n import TRANSLATIONS, current_lang
 from ..logic import parse_amount_to_cents, validate_direction
 from ..repo import (
     create_txn,
@@ -15,8 +15,9 @@ from ..repo import (
     list_txns,
     update_txn,
 )
-from ..router_support.navigation import _import_url, _index_url, _review_url
-from ..router_support.request_parsing import _resolve_range, _validate_iso_date
+from ..router_support.navigation import _index_url, _review_url
+from ..router_support.request_parsing import _resolve_range
+from ..validation import validate_iso_date
 from ..router_support.settings_access import current_settings
 from ..templates_core import templates
 
@@ -37,11 +38,8 @@ def _build_index_context(
     request: Request,
     start: str,
     end: str,
-    account_id: int,
-    show_archived: bool,
     lang: str,
 ) -> dict:
-    _ = (account_id, show_archived)
     transactions = list_txns(current_settings().db_path, start=start, end=end)
     existing_categories = list_categories(current_settings().db_path)
     category_options: list[str] = []
@@ -59,18 +57,10 @@ def _build_index_context(
         "edit_txn_id": None,
         "start": start,
         "end": end,
-        "account_id": 1,
-        "active_account_name": TRANSLATIONS[lang]["summary_account"],
-        "is_archived_account": False,
-        "is_default_account": True,
-        "show_archived": False,
-        "accounts": [],
-        "txn_accounts": [{"id": 1, "name": "Default"}],
         "category_options": category_options,
         "active_page": "ledger",
-        "ledger_url": _index_url(start, end, lang),
-        "review_url": _review_url(lang),
-        "import_url": _import_url(start, end, lang),
+        "ledger_url": _index_url(start, end),
+        "review_url": _review_url(),
         "lang": lang,
         "t": TRANSLATIONS[lang],
     }
@@ -80,16 +70,12 @@ def _render_partial(
     request: Request,
     start: str,
     end: str,
-    account_id: int,
-    show_archived: bool,
     lang: str,
 ) -> HTMLResponse:
     context = _build_index_context(
         request,
         start,
         end,
-        account_id,
-        show_archived,
         lang,
     )
     summary_html = templates.get_template("_summary.html").render(**context)
@@ -105,19 +91,23 @@ def _normalize_transaction_input(
     category: str,
     note: str | None,
 ) -> dict:
-    txn_date = _validate_iso_date(date, field_name="date")
+    txn_date = validate_iso_date(date, field_name="date")
     try:
         valid_direction = validate_direction(direction)
         amount_cents = parse_amount_to_cents(amount)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    normalized_category = category.strip()
+    if not normalized_category:
+        raise HTTPException(status_code=400, detail="category required")
+
     normalized_note = DEFAULT_NOTE if note is None or not note.strip() else note.strip()
     return {
         "date_str": txn_date,
         "direction": valid_direction,
         "amount_cents": amount_cents,
-        "category": category.strip(),
+        "category": normalized_category,
         "note": normalized_note,
     }
 
@@ -134,8 +124,6 @@ def _transaction_template_context(
         request,
         start,
         end,
-        1,
-        False,
         lang,
     )
     context["txn"] = txn
@@ -145,16 +133,11 @@ def _transaction_template_context(
 @router.get("/", response_class=HTMLResponse)
 def index(
     request: Request,
-    account_id: int | None = None,
     start: str | None = None,
     end: str | None = None,
-    show_archived: str | None = None,
-    lang: str | None = None,
 ):
-    _ = account_id
-    _ = show_archived
     resolved_start, resolved_end = _resolve_range(start, end)
-    resolved_lang = parse_lang(lang)
+    resolved_lang = current_lang()
     return templates.TemplateResponse(
         request,
         "index.html",
@@ -162,8 +145,6 @@ def index(
             request,
             resolved_start,
             resolved_end,
-            1,
-            False,
             resolved_lang,
         ),
     )
@@ -177,16 +158,11 @@ def create_transaction(
     amount: str = Form(...),
     category: str = Form(...),
     note: str | None = Form(default=None),
-    account_id: int | None = Form(default=None),
     start: str | None = Form(default=None),
     end: str | None = Form(default=None),
-    show_archived: str | None = Form(default=None),
-    lang: str | None = Form(default=None),
 ):
-    _ = account_id
-    _ = show_archived
     resolved_start, resolved_end = _resolve_range(start, end)
-    resolved_lang = parse_lang(lang)
+    resolved_lang = current_lang()
     normalized = _normalize_transaction_input(
         date=date,
         direction=direction,
@@ -196,7 +172,6 @@ def create_transaction(
     )
     create_txn(
         current_settings().db_path,
-        account_id=1,
         **normalized,
     )
     if request.headers.get("HX-Request") == "true":
@@ -204,16 +179,10 @@ def create_transaction(
             request,
             resolved_start,
             resolved_end,
-            1,
-            False,
             resolved_lang,
         )
     return RedirectResponse(
-        url=_index_url(
-            resolved_start,
-            resolved_end,
-            resolved_lang,
-        ),
+        url=_index_url(resolved_start, resolved_end),
         status_code=303,
     )
 
@@ -224,10 +193,9 @@ def transaction_row(
     request: Request,
     start: str | None = None,
     end: str | None = None,
-    lang: str | None = None,
 ):
     resolved_start, resolved_end = _resolve_range(start, end)
-    resolved_lang = parse_lang(lang)
+    resolved_lang = current_lang()
     txn = get_txn(current_settings().db_path, txn_id)
     if txn is None:
         raise HTTPException(status_code=404, detail="transaction not found")
@@ -249,10 +217,9 @@ def edit_transaction_form(
     request: Request,
     start: str | None = None,
     end: str | None = None,
-    lang: str | None = None,
 ):
     resolved_start, resolved_end = _resolve_range(start, end)
-    resolved_lang = parse_lang(lang)
+    resolved_lang = current_lang()
     txn = get_txn(current_settings().db_path, txn_id)
     if txn is None:
         raise HTTPException(status_code=404, detail="transaction not found")
@@ -277,16 +244,11 @@ def update_transaction_route(
     amount: str = Form(...),
     category: str = Form(...),
     note: str | None = Form(default=None),
-    account_id: int | None = Form(default=None),
     start: str | None = Form(default=None),
     end: str | None = Form(default=None),
-    show_archived: str | None = Form(default=None),
-    lang: str | None = Form(default=None),
 ):
-    _ = account_id
-    _ = show_archived
     resolved_start, resolved_end = _resolve_range(start, end)
-    resolved_lang = parse_lang(lang)
+    resolved_lang = current_lang()
     normalized = _normalize_transaction_input(
         date=date,
         direction=direction,
@@ -297,7 +259,6 @@ def update_transaction_route(
     updated = update_txn(
         current_settings().db_path,
         txn_id,
-        account_id=1,
         **normalized,
     )
     if not updated:
@@ -307,16 +268,10 @@ def update_transaction_route(
             request,
             resolved_start,
             resolved_end,
-            1,
-            False,
             resolved_lang,
         )
     return RedirectResponse(
-        url=_index_url(
-            resolved_start,
-            resolved_end,
-            resolved_lang,
-        ),
+        url=_index_url(resolved_start, resolved_end),
         status_code=303,
     )
 
@@ -325,48 +280,33 @@ def update_transaction_route(
 def delete_transaction(
     txn_id: int,
     request: Request,
-    account_id: int | None = Form(default=None),
     start: str | None = Form(default=None),
     end: str | None = Form(default=None),
-    show_archived: str | None = Form(default=None),
-    lang: str | None = Form(default=None),
 ):
-    _ = account_id
-    _ = show_archived
     resolved_start, resolved_end = _resolve_range(start, end)
-    resolved_lang = parse_lang(lang)
-    delete_txn(current_settings().db_path, txn_id)
+    resolved_lang = current_lang()
+    deleted = delete_txn(current_settings().db_path, txn_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="transaction not found")
     if request.headers.get("HX-Request") == "true":
         return _render_partial(
             request,
             resolved_start,
             resolved_end,
-            1,
-            False,
             resolved_lang,
         )
     return RedirectResponse(
-        url=_index_url(
-            resolved_start,
-            resolved_end,
-            resolved_lang,
-        ),
+        url=_index_url(resolved_start, resolved_end),
         status_code=303,
     )
 
 
 @router.get("/export.csv")
 def export_csv(
-    account_id: int | None = None,
     start: str | None = None,
     end: str | None = None,
-    show_archived: str | None = None,
-    lang: str | None = None,
 ):
-    _ = account_id
-    _ = show_archived
     resolved_start, resolved_end = _resolve_range(start, end)
-    parse_lang(lang)
     transactions = list_txns(
         current_settings().db_path,
         start=resolved_start,
@@ -376,13 +316,12 @@ def export_csv(
     output = StringIO()
     writer = csv.writer(output)
     writer.writerow(
-        ["id", "account_id", "date", "direction", "amount", "category", "note"]
+        ["id", "date", "direction", "amount", "category", "note"]
     )
     for txn in transactions:
         writer.writerow(
             [
                 txn["id"],
-                txn["account_id"],
                 txn["date"],
                 txn["direction"],
                 f"{txn['amount_cents'] / 100:.2f}",

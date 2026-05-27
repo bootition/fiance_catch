@@ -1,10 +1,8 @@
 from datetime import date as dt_date, timedelta
-import re
 
 from fastapi import HTTPException
 
-
-_ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+from ..validation import validate_iso_date
 
 
 def _current_month_range(today: dt_date | None = None) -> tuple[str, str]:
@@ -18,29 +16,25 @@ def _current_month_range(today: dt_date | None = None) -> tuple[str, str]:
     return month_start.isoformat(), month_end.isoformat()
 
 
-def _validate_iso_date(value: str, *, field_name: str) -> str:
-    if not _ISO_DATE_RE.fullmatch(value):
-        raise HTTPException(status_code=400, detail=f"{field_name} must be YYYY-MM-DD")
-    try:
-        dt_date.fromisoformat(value)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=400, detail=f"{field_name} must be YYYY-MM-DD"
-        ) from exc
-    return value
-
-
 def _resolve_range(start: str | None, end: str | None) -> tuple[str, str]:
     default_start, default_end = _current_month_range()
     resolved_start = (
         default_start
         if start is None
-        else _validate_iso_date(start, field_name="start")
+        else validate_iso_date(start, field_name="start")
     )
     resolved_end = (
-        default_end if end is None else _validate_iso_date(end, field_name="end")
+        default_end if end is None else validate_iso_date(end, field_name="end")
     )
+    _validate_range_order(resolved_start, resolved_end)
     return resolved_start, resolved_end
+
+
+def _validate_range_order(start: str | None, end: str | None) -> None:
+    if start is not None and end is not None and start > end:
+        raise HTTPException(
+            status_code=400, detail="start must be on or before end"
+        )
 
 
 def _optional_trimmed(value: str | None) -> str | None:
@@ -56,4 +50,4 @@ def _optional_iso_date(value: str | None, *, field_name: str) -> str | None:
     normalized = _optional_trimmed(value)
     if normalized is None:
         return None
-    return _validate_iso_date(normalized, field_name=field_name)
+    return validate_iso_date(normalized, field_name=field_name)

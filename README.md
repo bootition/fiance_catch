@@ -2,6 +2,14 @@
 
 Desktop-first local ledger app built with FastAPI, Jinja2, HTMX, and SQLite.
 
+## Current product surface
+
+- Bookkeeping dashboard: `/`
+- Review dashboard: `/review`
+- Cleanup center: `/cleanup`
+
+Import is no longer mounted as a user-facing mode. Historical import metadata remains in the database so cleanup workflows can continue to target imported batches safely.
+
 ## Run locally
 
 1. Install dependencies:
@@ -20,7 +28,7 @@ python -m uvicorn app.main:app --reload
 
 ## Data location and persistence
 
-- SQLite file path: `.data/ledger.sqlite` (created relative to your current working directory).
+- SQLite file path: project-root `.data/ledger.sqlite`.
 - Data is persisted in that file and remains available after server restart.
 
 ## Backup and export
@@ -37,7 +45,13 @@ python -m uvicorn app.main:app --reload
 - Product behavior is single-ledger: all transactions are shown together, with date-range filtering.
 - Existing multi-account databases are still supported without destructive migration.
 - Legacy `account_id` and `accounts` data remain in SQLite for compatibility and historical data retention.
-- New transactions are written in single-ledger mode and core flows remain: add/delete/filter/summary/export.
+- New transactions are written in single-ledger mode and core flows remain: add/delete/filter/summary/export/review/cleanup.
+
+## Review and cleanup notes
+
+- Review supports week/month/year windows with multi-indicator line charts (`income_total` / `expense_total` plus per-category project breakdowns), pie chart by expense category, and project filtering based on transaction category values.
+- Weekly buckets are Sunday-anchored.
+- Cleanup keeps bulk-delete safety controls (`DELETE` / `DELETE ALL`, preview token, matched-count recheck) and supports import-batch based deletion via retained `import_batch_id` metadata.
 
 ## MVP limitations
 
