@@ -1,16 +1,38 @@
-__pycache__/
-*.pyc
-*.pyo
-.pytest_cache/
+# --- 运行时数据与凭据 ---
 .data/
+*.log
+*.out
+*.err
 
-.worktrees/
-
+# --- Python ---
+__pycache__/
+*.py[cod]
+.pytest_cache/
 .pytest-run-*
 pytest-run-*
-.codex-tmp/
+.venv/
 
+# --- 本地工具与生成状态 ---
+.codex-tmp/
+.omo/
+.opencode/
+.planning/
+.worktrees/
+
+# --- 会话产物（planning-with-files 生成，永不提交）---
+task_plan.md
+findings.md
+progress.md
 plan-financeCatch.prompt.md
-*.bat
+
+# --- 机器证据（只按需显式跟踪，绝不整体 sweep）---
+docs/evidence/evidence-s0/
+docs/evidence/evidence-s1/
+
+# --- OS/编辑器 ---
 .vscode/
-.pytest_cache/
+.DS_Store
+Thumbs.db
+
+# --- 本地启动脚本 ---
+*.bat
