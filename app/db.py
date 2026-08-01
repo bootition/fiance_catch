@@ -1,6 +1,7 @@
 import sqlite3
 from pathlib import Path
 
+from .migration_v2 import ensure_ledger_v2
 from .settings import Settings
 
 
@@ -425,3 +426,5 @@ def init_db(settings: Settings) -> None:
             """
         )
         conn.execute("DROP INDEX IF EXISTS idx_transactions_source_txn_id_unique")
+
+    ensure_ledger_v2(settings)

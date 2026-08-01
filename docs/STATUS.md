@@ -11,21 +11,21 @@
 
 | 层面 | 状态 | 依据 |
 |---|---|---|
-| 产品方向 | 🔄 已定稿、待用户确认后实施：本地单用户账单驱动个人财务系统（逐笔落库、规则优先人工确认、第一版不接 AI） | `docs/decisions/01_refactor_spec.md` |
+| 产品方向 | ✅ 已获用户确认，正在实施：本地单用户账单驱动个人财务系统（逐笔落库、规则优先人工确认、第一版不接 AI） | `docs/decisions/01_refactor_spec.md` |
+| 重构阶段 1 | ✅ 完成：新 schema（8 表）、备份/重置迁移（幂等）、新仓储层 `app/ledger_repo.py`、pytest 基座修复 | `docs/decisions/01_refactor_spec.md` §4/§6/§7.1 |
 | 当前产品面（未重构前） | ✅ 记账 `/` + 复盘 `/review` + 清理 `/cleanup`；导入 UI 已移除，仅保留历史元数据 | `docs/decisions/02_architecture.md` |
-| 测试基线 | ✅ `PYTHONPATH=.` 下 77 项通过；默认 `pytest` 因 `app` 导入路径问题失败（重构应修复） | `.planning/2026-08-01-refactor/findings.md` |
+| 测试基线 | ✅ 直接 `pytest` 112 项通过（77 旧 + 35 新，含 schema/仓储/迁移） | `pytest.ini` |
 
 （✅=已通过 🔄=进行中 ⏳=待执行）
 
 ## 已知剩余缺口（诚实披露）
 
-1. 重构规格（`decisions/01`）已输出，**等待用户确认后实施**；确认前不改业务实现。
-2. `pytest` 默认启动缺少项目级测试路径配置，直接执行收集阶段失败。
-3. 重构规格中的待定项：`import_sessions`/`import_rows`/`category_rules` 遗留表去留、in-memory 批量删除令牌是否替换（见 `decisions/03` 跟进候选）。
+1. 重构阶段 2~6 未实施：解析器（支付宝 CSV/微信 XLSX）、规则与观察期、退款匹配、页面重建、端到端测试（见 `decisions/01` §7）。
+2. 重构规格中的待定项：`import_sessions`/`import_rows`/`category_rules` 遗留表去留、in-memory 批量删除令牌是否替换（见 `decisions/03` 跟进候选）。
 
 ## 进行中的工作
 
-- 账单驱动重构（调研与方案阶段）：调研完成，规格已输出，等待用户确认（计划见 `.planning/2026-08-01-refactor/`）
+- 账单驱动重构：阶段 1（新 schema + 迁移 + 仓储层 + 测试基座）已完成并提交；下一步阶段 2（账单解析与批次导入），待用户安排
 
 ## 当前有效文档（Current Truth）
 
