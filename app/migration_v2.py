@@ -1,4 +1,3 @@
-import shutil
 import sqlite3
 from datetime import datetime
 from pathlib import Path
@@ -39,12 +38,15 @@ def new_schema_initialized(conn: sqlite3.Connection) -> bool:
 
 
 def backup_db(settings: Settings) -> Path:
-    """复制数据库为带时间戳备份并校验完整性；返回备份路径。"""
+    """用 SQLite backup API 创建一致性快照（含 WAL 未合并事务）并校验完整性。"""
     if not settings.db_path.exists():
         raise FileNotFoundError(f"database not found: {settings.db_path}")
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     backup_path = settings.data_dir / f"ledger.sqlite-{timestamp}.bak"
-    shutil.copy2(settings.db_path, backup_path)
+    with sqlite3.connect(str(settings.db_path)) as src, sqlite3.connect(
+        str(backup_path)
+    ) as dst:
+        src.backup(dst)
     with _connect(backup_path) as conn:
         result = conn.execute("PRAGMA integrity_check").fetchone()
         if result is None or str(result[0]).lower() != "ok":
@@ -212,6 +214,21 @@ def init_new_schema(conn: sqlite3.Connection) -> None:
     )
 
 
+_LEGACY_TABLES = (
+    "transactions",
+    "import_rows",
+    "import_sessions",
+    "category_rules",
+    "accounts",
+)
+
+
+def drop_legacy_tables(conn: sqlite3.Connection) -> None:
+    """删除旧业务表（索引/触发器随表删除）。幂等，表不存在时静默跳过。"""
+    for table in _LEGACY_TABLES:
+        conn.execute(f"DROP TABLE IF EXISTS {table}")
+
+
 _LEGACY_DATA_TABLES = (
     "transactions",
     "import_sessions",
@@ -239,27 +256,32 @@ def _legacy_has_data(conn: sqlite3.Connection) -> bool:
 
 
 def ensure_ledger_v2(settings: Settings) -> bool:
-    """幂等迁移：首次为有数据的旧库备份，然后初始化新 schema；返回是否执行了备份迁移。
+    """幂等重置迁移：保证活动库为干净的新模型。
 
-    全新库（无旧数据）只初始化不备份。
+    - 旧库有数据（无论新 schema 是否已初始化，兼容历史半迁移状态）：
+      先做一致性备份，再在单事务中删除旧业务表、确保新 schema 与 marker。
+    - 无旧数据（全新库）：不备份，直接确保新 schema。
+    返回是否执行了备份迁移。旧库数据只存在于时间戳备份文件。
     """
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     with _connect(settings.db_path) as conn:
-        if new_schema_initialized(conn):
-            return False
+        initialized = new_schema_initialized(conn)
         has_legacy = _legacy_has_data(conn)
     backed_up = False
     if has_legacy:
         backup_db(settings)
         backed_up = True
     with _connect(settings.db_path) as conn:
-        init_new_schema(conn)
-        conn.execute(
-            """
-            INSERT OR REPLACE INTO schema_meta(key, value)
-            VALUES (?, ?)
-            """,
-            (LEDGER_V2_MARKER, datetime.now().isoformat(timespec="seconds")),
-        )
+        conn.execute("BEGIN IMMEDIATE")
+        drop_legacy_tables(conn)
+        if not initialized:
+            init_new_schema(conn)
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO schema_meta(key, value)
+                VALUES (?, ?)
+                """,
+                (LEDGER_V2_MARKER, datetime.now().isoformat(timespec="seconds")),
+            )
         conn.commit()
     return backed_up

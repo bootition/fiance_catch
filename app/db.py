@@ -1,7 +1,7 @@
 import sqlite3
 from pathlib import Path
 
-from .migration_v2 import ensure_ledger_v2
+from .migration_v2 import ensure_ledger_v2, new_schema_initialized
 from .settings import Settings
 
 
@@ -279,7 +279,23 @@ def _rebuild_transactions_table(conn: sqlite3.Connection) -> None:
 
 
 def init_db(settings: Settings) -> None:
+    """生产入口：旧库先修复，再由 ensure_ledger_v2 备份并重置为干净新模型。
+
+    已迁移过的库跳过旧修复，避免重建旧业务表。
+    """
     settings.data_dir.mkdir(parents=True, exist_ok=True)
+    with connect(settings.db_path) as conn:
+        if not new_schema_initialized(conn):
+            _repair_legacy_schema(settings)
+    ensure_ledger_v2(settings)
+
+
+def init_legacy_db(settings: Settings) -> None:
+    """仅修复/创建旧 schema，不做 v2 重置。仅供旧产品面测试保留。"""
+    _repair_legacy_schema(settings)
+
+
+def _repair_legacy_schema(settings: Settings) -> None:
     with connect(settings.db_path) as conn:
         # Recover from a previous interrupted migration: if legacy tables
         # exist, the original tables were already renamed. Restore from
@@ -426,5 +442,3 @@ def init_db(settings: Settings) -> None:
             """
         )
         conn.execute("DROP INDEX IF EXISTS idx_transactions_source_txn_id_unique")
-
-    ensure_ledger_v2(settings)

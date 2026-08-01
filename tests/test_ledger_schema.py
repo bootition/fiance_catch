@@ -206,12 +206,11 @@ def test_new_schema_indexes_created(tmp_path):
         conn.close()
 
 
-def test_legacy_transactions_table_intact(tmp_path):
+def test_legacy_tables_removed_from_active_db(tmp_path):
     conn = _init(tmp_path)
     try:
-        row = conn.execute(
-            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'transactions'"
-        ).fetchone()
-        assert row is not None and "amount_cents" in str(row["sql"])
+        names = _table_names(conn)
+        for table in ("transactions", "accounts", "import_sessions", "import_rows", "category_rules"):
+            assert table not in names, f"legacy table still present: {table}"
     finally:
         conn.close()

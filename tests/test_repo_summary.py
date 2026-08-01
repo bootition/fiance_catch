@@ -1,11 +1,11 @@
-from app.db import init_db
+from app.db import init_legacy_db
 from app.repo import create_txn, get_summary
 from app.settings import Settings
 
 
 def test_get_summary_totals_and_by_category(tmp_path):
     settings = Settings(data_dir=tmp_path, db_path=tmp_path / "t.sqlite")
-    init_db(settings)
+    init_legacy_db(settings)
 
     create_txn(
         settings.db_path,

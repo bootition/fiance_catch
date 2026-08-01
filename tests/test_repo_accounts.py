@@ -1,13 +1,13 @@
 import sqlite3
 
-from app.db import init_db
+from app.db import init_legacy_db
 from app.repo import create_txn, delete_txn, get_summary, list_categories, list_txns
 from app.settings import Settings
 
 
 def test_create_txn_always_writes_default_account(tmp_path):
     settings = Settings(data_dir=tmp_path, db_path=tmp_path / "t.sqlite")
-    init_db(settings)
+    init_legacy_db(settings)
 
     conn = sqlite3.connect(str(settings.db_path))
     conn.execute(
@@ -38,7 +38,7 @@ def test_create_txn_always_writes_default_account(tmp_path):
 
 def test_list_txns_get_summary_and_categories_ignore_account_scope(tmp_path):
     settings = Settings(data_dir=tmp_path, db_path=tmp_path / "t.sqlite")
-    init_db(settings)
+    init_legacy_db(settings)
 
     conn = sqlite3.connect(str(settings.db_path))
     conn.execute(
@@ -68,7 +68,7 @@ def test_list_txns_get_summary_and_categories_ignore_account_scope(tmp_path):
 
 def test_delete_txn_removes_row_without_account_scope(tmp_path):
     settings = Settings(data_dir=tmp_path, db_path=tmp_path / "t.sqlite")
-    init_db(settings)
+    init_legacy_db(settings)
 
     txn_id = create_txn(
         settings.db_path,

@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 
 import app.main as main
 import app.routers.review as review_router
-from app.db import init_db
+from app.db import init_legacy_db
 from app.router_support.settings_access import configure_settings
 from app.repo import create_txn, list_txns
 from app.settings import Settings
@@ -62,7 +62,7 @@ def _review_expense_summary_value(response_text: str) -> float:
 @pytest.fixture
 def client_and_settings(tmp_path, monkeypatch):
     settings = Settings(data_dir=tmp_path, db_path=tmp_path / "t.sqlite")
-    init_db(settings)
+    init_legacy_db(settings)
     monkeypatch.setattr(main, "settings", settings)
     configure_settings(settings)
     with TestClient(main.app) as client:

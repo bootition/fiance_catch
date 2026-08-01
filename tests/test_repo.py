@@ -1,11 +1,11 @@
-from app.db import init_db
+from app.db import init_legacy_db
 from app.repo import create_txn, delete_txn, list_txns, update_txn
 from app.settings import Settings
 
 
 def test_create_list_delete(tmp_path):
     settings = Settings(data_dir=tmp_path, db_path=tmp_path / "t.sqlite")
-    init_db(settings)
+    init_legacy_db(settings)
 
     tid = create_txn(
         settings.db_path,
@@ -27,14 +27,14 @@ def test_create_list_delete(tmp_path):
 
 def test_delete_txn_returns_false_for_missing_row(tmp_path):
     settings = Settings(data_dir=tmp_path, db_path=tmp_path / "t.sqlite")
-    init_db(settings)
+    init_legacy_db(settings)
 
     assert delete_txn(settings.db_path, 999999) is False
 
 
 def test_update_txn_updates_existing_row(tmp_path):
     settings = Settings(data_dir=tmp_path, db_path=tmp_path / "t.sqlite")
-    init_db(settings)
+    init_legacy_db(settings)
 
     tid = create_txn(
         settings.db_path,

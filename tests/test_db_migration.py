@@ -1,6 +1,6 @@
 import sqlite3
 
-from app.db import init_db
+from app.db import init_legacy_db
 from app.repo import get_summary, list_txns
 from app.settings import Settings
 
@@ -46,7 +46,7 @@ def test_init_db_rebuilds_legacy_transactions_table_with_account_fk(tmp_path):
     conn.close()
 
     settings = Settings(data_dir=tmp_path, db_path=db_path)
-    init_db(settings)
+    init_legacy_db(settings)
 
     conn2 = sqlite3.connect(str(db_path))
     conn2.row_factory = sqlite3.Row
@@ -112,7 +112,7 @@ def test_init_db_rebuilds_legacy_accounts_table_with_archived_check(tmp_path):
     conn.close()
 
     settings = Settings(data_dir=tmp_path, db_path=db_path)
-    init_db(settings)
+    init_legacy_db(settings)
 
     conn2 = sqlite3.connect(str(db_path))
     conn2.row_factory = sqlite3.Row
@@ -184,7 +184,7 @@ def test_init_db_normalizes_legacy_transaction_account_id_edge_cases(tmp_path):
     conn.close()
 
     settings = Settings(data_dir=tmp_path, db_path=db_path)
-    init_db(settings)
+    init_legacy_db(settings)
 
     conn2 = sqlite3.connect(str(db_path))
     conn2.row_factory = sqlite3.Row
@@ -271,7 +271,7 @@ def test_init_db_normalizes_legacy_accounts_archived_edge_cases(tmp_path):
     conn.close()
 
     settings = Settings(data_dir=tmp_path, db_path=db_path)
-    init_db(settings)
+    init_legacy_db(settings)
 
     conn2 = sqlite3.connect(str(db_path))
     conn2.row_factory = sqlite3.Row
@@ -371,7 +371,7 @@ def test_single_ledger_reads_all_legacy_account_rows(tmp_path):
     conn.close()
 
     settings = Settings(data_dir=tmp_path, db_path=db_path)
-    init_db(settings)
+    init_legacy_db(settings)
 
     rows = list_txns(settings.db_path, start="2026-03-01", end="2026-03-31")
     notes = [str(row["note"]) for row in rows]
@@ -424,7 +424,7 @@ def test_init_db_drops_legacy_source_txn_unique_index(tmp_path):
     conn.close()
 
     settings = Settings(data_dir=tmp_path, db_path=db_path)
-    init_db(settings)
+    init_legacy_db(settings)
 
     conn2 = sqlite3.connect(str(db_path))
     conn2.row_factory = sqlite3.Row
@@ -474,7 +474,7 @@ def test_init_db_adds_import_batch_id_column_and_index(tmp_path):
     conn.close()
 
     settings = Settings(data_dir=tmp_path, db_path=db_path)
-    init_db(settings)
+    init_legacy_db(settings)
 
     conn2 = sqlite3.connect(str(db_path))
     conn2.row_factory = sqlite3.Row
@@ -533,7 +533,7 @@ def test_init_db_upgrades_direction_check_to_include_neutral(tmp_path):
     conn.close()
 
     settings = Settings(data_dir=tmp_path, db_path=db_path)
-    init_db(settings)
+    init_legacy_db(settings)
 
     conn2 = sqlite3.connect(str(db_path))
     conn2.row_factory = sqlite3.Row

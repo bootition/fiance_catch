@@ -78,7 +78,15 @@ def test_backup_db_missing_source_raises(tmp_path):
         backup_db(settings)
 
 
-def test_ensure_ledger_v2_backs_up_legacy_once(tmp_path):
+def _table_names(db_path):
+    with sqlite3.connect(str(db_path)) as conn:
+        rows = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table'"
+        ).fetchall()
+        return {row[0] for row in rows}
+
+
+def test_ensure_ledger_v2_resets_legacy_and_backs_up_once(tmp_path):
     settings = _legacy_db(tmp_path)
     assert ensure_ledger_v2(settings) is True
     backups = list(tmp_path.glob("ledger.sqlite-*.bak"))
@@ -92,6 +100,14 @@ def test_ensure_ledger_v2_backs_up_legacy_once(tmp_path):
             "SELECT value FROM schema_meta WHERE key = 'ledger_v2_init_at'"
         ).fetchone()
         assert row is not None
+        names = _table_names(settings.db_path)
+        assert "transactions" not in names
+        assert "accounts" not in names
+        assert "import_sessions" not in names
+        assert "import_rows" not in names
+        assert "category_rules" not in names
+    with sqlite3.connect(str(backups[0])) as conn:
+        conn.row_factory = sqlite3.Row
         legacy_count = conn.execute(
             "SELECT COUNT(*) AS c FROM transactions"
         ).fetchone()["c"]
@@ -106,6 +122,23 @@ def test_ensure_ledger_v2_fresh_db_no_backup(tmp_path):
     with sqlite3.connect(str(settings.db_path)) as conn:
         conn.row_factory = sqlite3.Row
         assert new_schema_initialized(conn)
+
+
+def test_ensure_ledger_v2_half_migrated_state_backs_up_before_drop(tmp_path):
+    settings = _legacy_db(tmp_path)
+    with sqlite3.connect(str(settings.db_path)) as conn:
+        conn.row_factory = sqlite3.Row
+        init_new_schema(conn)
+        conn.commit()
+        assert new_schema_initialized(conn)
+    assert ensure_ledger_v2(settings) is True
+    backups = list(tmp_path.glob("ledger.sqlite-*.bak"))
+    assert len(backups) == 1
+    with sqlite3.connect(str(backups[0])) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("SELECT COUNT(*) AS c FROM transactions").fetchone()
+        assert int(row["c"]) == 1
+    assert "transactions" not in _table_names(settings.db_path)
 
 
 def test_init_new_schema_idempotent(tmp_path):
@@ -133,6 +166,9 @@ def test_init_db_legacy_path_creates_backup_and_new_schema(tmp_path):
     with sqlite3.connect(str(settings.db_path)) as conn:
         conn.row_factory = sqlite3.Row
         assert new_schema_initialized(conn)
+        names = _table_names(settings.db_path)
+        assert "transactions" not in names
+        assert "accounts" not in names
     with sqlite3.connect(str(backups[0])) as conn:
         conn.row_factory = sqlite3.Row
         row = conn.execute("SELECT COUNT(*) AS c FROM transactions").fetchone()
@@ -144,3 +180,30 @@ def test_init_db_rerun_does_not_create_second_backup(tmp_path):
     init_db(settings)
     init_db(settings)
     assert len(list(tmp_path.glob("ledger.sqlite-*.bak"))) == 1
+    with sqlite3.connect(str(settings.db_path)) as conn:
+        conn.row_factory = sqlite3.Row
+        assert new_schema_initialized(conn)
+        names = _table_names(settings.db_path)
+        assert "transactions" not in names
+        assert "accounts" not in names
+        assert "import_sessions" not in names
+
+
+def test_backup_db_wal_mode_consistency(tmp_path):
+    settings = _legacy_db(tmp_path)
+    with sqlite3.connect(str(settings.db_path)) as conn:
+        conn.execute("PRAGMA journal_mode = WAL")
+        conn.execute(
+            """
+            INSERT INTO transactions(account_id, date, direction, amount_cents, category, note)
+            VALUES (1, '2026-06-02', 'expense', 500, 'shopping', 'wal-row')
+            """
+        )
+        conn.commit()
+    backup_path = backup_db(settings)
+    with sqlite3.connect(str(backup_path)) as conn:
+        conn.row_factory = sqlite3.Row
+        result = conn.execute("PRAGMA integrity_check").fetchone()
+        assert result[0] == "ok"
+        rows = conn.execute("SELECT category FROM transactions").fetchall()
+        assert sorted(row["category"] for row in rows) == ["food", "shopping"]
