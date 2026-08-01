@@ -1,3 +1,10 @@
+---
+title: Architecture Overview
+status: approved
+category: decisions
+last-reviewed: 2026-05-27
+---
+
 # Architecture Overview
 
 ## Product Surface

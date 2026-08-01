@@ -1,3 +1,10 @@
+---
+title: Engineering History
+status: historical
+category: decisions
+last-reviewed: 2026-05-27
+---
+
 # Engineering History
 
 ## Stable Decisions
