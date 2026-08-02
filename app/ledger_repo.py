@@ -25,14 +25,29 @@ def create_import_batch(
     file_fingerprint: str,
 ) -> int:
     with connect(db_path) as conn:
-        cur = conn.execute(
-            """
-            INSERT INTO import_batches(file_name, platform, file_fingerprint)
-            VALUES (?, ?, ?)
-            """,
-            (file_name, platform, file_fingerprint),
+        return _create_import_batch(
+            conn,
+            file_name=file_name,
+            platform=platform,
+            file_fingerprint=file_fingerprint,
         )
-        return int(cur.lastrowid)
+
+
+def _create_import_batch(
+    conn,
+    *,
+    file_name: str,
+    platform: str,
+    file_fingerprint: str,
+) -> int:
+    cur = conn.execute(
+        """
+        INSERT INTO import_batches(file_name, platform, file_fingerprint)
+        VALUES (?, ?, ?)
+        """,
+        (file_name, platform, file_fingerprint),
+    )
+    return int(cur.lastrowid)
 
 
 def get_import_batch(db_path, batch_id: int):
@@ -55,19 +70,38 @@ def update_batch_counts(
     pending_count: int,
 ) -> bool:
     with connect(db_path) as conn:
-        cur = conn.execute(
-            """
-            UPDATE import_batches
-            SET
-              row_count = ?,
-              accepted_count = ?,
-              skipped_count = ?,
-              pending_count = ?
-            WHERE id = ?
-            """,
-            (row_count, accepted_count, skipped_count, pending_count, batch_id),
+        return _update_batch_counts(
+            conn,
+            batch_id,
+            row_count=row_count,
+            accepted_count=accepted_count,
+            skipped_count=skipped_count,
+            pending_count=pending_count,
         )
-        return int(cur.rowcount) > 0
+
+
+def _update_batch_counts(
+    conn,
+    batch_id: int,
+    *,
+    row_count: int,
+    accepted_count: int,
+    skipped_count: int,
+    pending_count: int,
+) -> bool:
+    cur = conn.execute(
+        """
+        UPDATE import_batches
+        SET
+          row_count = ?,
+          accepted_count = ?,
+          skipped_count = ?,
+          pending_count = ?
+        WHERE id = ?
+        """,
+        (row_count, accepted_count, skipped_count, pending_count, batch_id),
+    )
+    return int(cur.rowcount) > 0
 
 
 def revoke_batch(db_path, batch_id: int, *, note: str = "") -> bool:
@@ -117,47 +151,78 @@ def insert_source_transaction(
 ) -> tuple[int, bool]:
     """插入来源流水；重复（同平台同单号）返回 (已有id, False)。"""
     with connect(db_path) as conn:
-        existing = conn.execute(
-            """
-            SELECT id FROM source_transactions
-            WHERE platform = ? AND source_txn_id = ?
-            """,
-            (platform, source_txn_id),
-        ).fetchone()
-        if existing is not None:
-            return int(existing["id"]), False
-        cur = conn.execute(
-            """
-            INSERT INTO source_transactions(
-              platform,
-              source_txn_id,
-              occurred_at,
-              amount_cents,
-              direction,
-              status_text,
-              counterparty,
-              item_desc,
-              note,
-              batch_id,
-              normalized_hash
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                platform,
-                source_txn_id,
-                occurred_at,
-                amount_cents,
-                direction,
-                status_text,
-                counterparty,
-                item_desc,
-                note,
-                batch_id,
-                normalized_hash,
-            ),
+        return _insert_source_transaction(
+            conn,
+            platform=platform,
+            source_txn_id=source_txn_id,
+            occurred_at=occurred_at,
+            amount_cents=amount_cents,
+            direction=direction,
+            status_text=status_text,
+            counterparty=counterparty,
+            item_desc=item_desc,
+            note=note,
+            batch_id=batch_id,
+            normalized_hash=normalized_hash,
         )
-        return int(cur.lastrowid), True
+
+
+def _insert_source_transaction(
+    conn,
+    *,
+    platform: str,
+    source_txn_id: str,
+    occurred_at: str,
+    amount_cents: int,
+    direction: str,
+    status_text: str,
+    counterparty: str = "",
+    item_desc: str = "",
+    note: str = "",
+    batch_id: int | None = None,
+    normalized_hash: str,
+) -> tuple[int, bool]:
+    existing = conn.execute(
+        """
+        SELECT id FROM source_transactions
+        WHERE platform = ? AND source_txn_id = ?
+        """,
+        (platform, source_txn_id),
+    ).fetchone()
+    if existing is not None:
+        return int(existing["id"]), False
+    cur = conn.execute(
+        """
+        INSERT INTO source_transactions(
+          platform,
+          source_txn_id,
+          occurred_at,
+          amount_cents,
+          direction,
+          status_text,
+          counterparty,
+          item_desc,
+          note,
+          batch_id,
+          normalized_hash
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            platform,
+            source_txn_id,
+            occurred_at,
+            amount_cents,
+            direction,
+            status_text,
+            counterparty,
+            item_desc,
+            note,
+            batch_id,
+            normalized_hash,
+        ),
+    )
+    return int(cur.lastrowid), True
 
 
 def get_source_transaction(db_path, source_txn_id: int):

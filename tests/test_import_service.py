@@ -117,3 +117,95 @@ def test_refund_row_persists_status_text(db, tmp_path):
     refund = next(s for s in sources if s["source_txn_id"].startswith("TXN-A3"))
     assert refund["status_text"] == "退款成功"
     assert refund["direction"] == "neutral"
+
+
+def test_import_is_atomic_midway_failure_rolls_back(db, tmp_path, monkeypatch):
+    import app.importing.service as service
+
+    path = _alipay_file(tmp_path)
+    original = service._insert_source_transaction
+    calls = {"n": 0}
+
+    def failing(conn, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise RuntimeError("simulated disk failure")
+        return original(conn, **kwargs)
+
+    monkeypatch.setattr(service, "_insert_source_transaction", failing)
+    with pytest.raises(RuntimeError):
+        import_file(db, path, "alipay")
+
+    assert list_import_batches(db) == []
+    assert list_source_transactions(db) == []
+
+
+def test_import_is_atomic_count_update_failure_rolls_back(db, tmp_path, monkeypatch):
+    import app.importing.service as service
+
+    path = _alipay_file(tmp_path)
+
+    def failing_counts(conn, batch_id, **kwargs):
+        raise RuntimeError("simulated count update failure")
+
+    monkeypatch.setattr(service, "_update_batch_counts", failing_counts)
+    with pytest.raises(RuntimeError):
+        import_file(db, path, "alipay")
+
+    assert list_import_batches(db) == []
+    assert list_source_transactions(db) == []
+
+
+def test_import_retry_after_failure_succeeds(db, tmp_path, monkeypatch):
+    import app.importing.service as service
+
+    path = _alipay_file(tmp_path)
+    original = service._insert_source_transaction
+    calls = {"n": 0}
+
+    def failing_once(conn, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise RuntimeError("simulated failure")
+        return original(conn, **kwargs)
+
+    monkeypatch.setattr(service, "_insert_source_transaction", failing_once)
+    with pytest.raises(RuntimeError):
+        import_file(db, path, "alipay")
+    monkeypatch.undo()
+
+    retry = import_file(db, path, "alipay")
+    assert retry.added == 4  # 3 success + 1 refund，全部新增
+    assert retry.duplicates == 0
+    assert retry.skipped == 1
+    assert len(list_source_transactions(db, platform="alipay")) == 4
+    assert len(list_import_batches(db)) == 1
+
+
+def test_import_empty_source_txn_id_rejected(db, tmp_path):
+    rows = [
+        "2026-07-31 19:21:36,日用百货,某商户,/,消费,支出,25.00,余额宝,交易成功,TXN-OK-1,,",
+        "2026-07-31 18:00:00,日用百货,空单号商户,/,消费,支出,15.00,余额宝,交易成功,,,",
+        "2026-07-31 17:00:00,日用百货,另一商户,/,消费,支出,5.00,余额宝,交易成功,TXN-OK-2,,",
+    ]
+    path = _alipay_file(tmp_path, name="empty_id.csv", rows=rows)
+    result = import_file(db, path, "alipay")
+    assert result.added == 2
+    assert result.invalid == 1
+    sources = list_source_transactions(db, platform="alipay")
+    assert len(sources) == 2
+    assert all(s["source_txn_id"] for s in sources)
+
+
+def test_import_zero_amount_success_row_preserved(db, tmp_path):
+    rows = [
+        "2026-07-31 19:21:36,其他,某商户,/,0元活动,支出,0.00,余额宝,交易成功,TXN-ZERO-1,,",
+        "2026-07-31 18:00:00,其他,另一商户,/,正常消费,支出,10.00,余额宝,交易成功,TXN-ZERO-2,,",
+    ]
+    path = _alipay_file(tmp_path, name="zero_amount.csv", rows=rows)
+    result = import_file(db, path, "alipay")
+    assert result.added == 2
+    assert result.invalid == 0
+    sources = list_source_transactions(db, platform="alipay")
+    zero = next(s for s in sources if s["source_txn_id"] == "TXN-ZERO-1")
+    assert int(zero["amount_cents"]) == 0
