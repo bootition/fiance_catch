@@ -244,13 +244,25 @@ def process_batch(db_path, batch_id: int) -> ProcessResult:
         batch = conn.execute(
             "SELECT * FROM import_batches WHERE id = ?", (batch_id,)
         ).fetchone()
+        real_pending = int(
+            conn.execute(
+                """
+                SELECT COUNT(*) AS c FROM review_queue
+                WHERE status = 'pending'
+                  AND source_transaction_id IN (
+                    SELECT id FROM source_transactions WHERE batch_id = ?
+                  )
+                """,
+                (batch_id,),
+            ).fetchone()["c"]
+        )
         _update_batch_counts(
             conn,
             batch_id,
             row_count=int(batch["row_count"]),
             accepted_count=int(batch["accepted_count"]),
             skipped_count=int(batch["skipped_count"]),
-            pending_count=queued,
+            pending_count=real_pending,
         )
         conn.commit()
         return ProcessResult(

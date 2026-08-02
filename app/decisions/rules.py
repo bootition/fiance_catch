@@ -7,6 +7,9 @@ RULE_STATUS_ACTIVE = "active"
 
 
 def _text_contains(value: str, pattern: str) -> bool:
+    pattern = pattern.strip()
+    if not pattern:
+        return False  # 防御：空模式不得匹配任何交易
     return pattern in value
 
 

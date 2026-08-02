@@ -543,6 +543,9 @@ def _create_classification_rule(
     target_type: str,
     target_category: str = "",
 ) -> int:
+    pattern = match_pattern.strip()
+    if not pattern:
+        raise ValueError("match_pattern required")
     cur = conn.execute(
         """
         INSERT INTO classification_rules(
@@ -553,7 +556,7 @@ def _create_classification_rule(
         )
         VALUES (?, ?, ?, ?)
         """,
-        (match_field, match_pattern, target_type, target_category),
+        (match_field, pattern, target_type, target_category),
     )
     return int(cur.lastrowid)
 

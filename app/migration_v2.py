@@ -153,7 +153,7 @@ def init_new_schema(conn: sqlite3.Connection) -> None:
         CREATE TABLE IF NOT EXISTS classification_rules (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           match_field TEXT NOT NULL CHECK(match_field IN ('counterparty','item_desc')),
-          match_pattern TEXT NOT NULL,
+          match_pattern TEXT NOT NULL CHECK(TRIM(match_pattern) <> ''),
           target_type TEXT NOT NULL CHECK(target_type IN ('consumption','income','transfer')),
           target_category TEXT NOT NULL DEFAULT '',
           status TEXT NOT NULL DEFAULT 'observing' CHECK(status IN ('observing','active','disabled')),

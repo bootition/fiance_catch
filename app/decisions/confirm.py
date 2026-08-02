@@ -1,7 +1,9 @@
 """待确认相似项分组与批量确认（规格 §3.3）。
 
-- 按商户（counterparty）分组待确认项，支持批量指定分类/类型
-- 每次批量确认后，若组内存在重复模式（同商户多条），建议创建观察期规则
+风险区与分类区隔离：批量确认仅允许分类区原因（未命中、观察期规则预填）。
+退款（refund_pending）、提现（withdrawal）、人际转账（person_transfer）、
+其他中性资金流（other_neutral）为高风险区，禁止经通用 entry_type/category
+入口批量确认（分别由受约束流程处理：退款关联在阶段 4，提现/人际逐笔选用途）。
 """
 
 from dataclasses import dataclass
@@ -12,8 +14,25 @@ from ..ledger_repo import (
     _create_classification_rule,
     _create_ledger_entry,
 )
+from .constants import (
+    REASON_OBSERVING_RULE,
+    REASON_UNMATCHED,
+)
 
 REVIEW_PENDING = "pending"
+
+# 允许批量指定分类的待确认原因（分类区）
+ALLOWED_BULK_REASONS = frozenset({REASON_UNMATCHED, REASON_OBSERVING_RULE})
+
+# 高风险原因：任何情况下不得进入批量确认
+HIGH_RISK_REASONS = frozenset(
+    {
+        "refund_pending",
+        "withdrawal",
+        "person_transfer",
+        "other_neutral",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -44,10 +63,15 @@ class Group:
 
 
 def group_review_items(db_path) -> list[Group]:
-    """把 pending 待确认项按商户分组（同类分类区批量确认）。"""
+    """把 pending 分类区待确认项（未命中/观察期预填）按商户分组。
+
+    高风险区（退款/提现/人际/其他中性资金流）不参与分组，
+    由各自受约束流程逐笔处理。
+    """
+    placeholders = ",".join("?" * len(ALLOWED_BULK_REASONS))
     with connect(db_path) as conn:
         rows = conn.execute(
-            """
+            f"""
             SELECT
               rq.id AS review_id,
               rq.source_transaction_id,
@@ -61,9 +85,10 @@ def group_review_items(db_path) -> list[Group]:
               st.item_desc
             FROM review_queue AS rq
             JOIN source_transactions AS st ON st.id = rq.source_transaction_id
-            WHERE rq.status = 'pending'
+            WHERE rq.status = 'pending' AND rq.reason IN ({placeholders})
             ORDER BY st.counterparty ASC, st.occurred_at ASC
-            """
+            """,
+            tuple(ALLOWED_BULK_REASONS),
         ).fetchall()
     groups: dict[tuple[str, str], list[GroupItem]] = {}
     for row in rows:
@@ -115,6 +140,12 @@ def confirm_group(
         if group is None:
             raise ValueError(f"no pending review group: {counterparty} ({platform})")
 
+        high_risk = {item.reason for item in group.items} & HIGH_RISK_REASONS
+        if high_risk:
+            raise ValueError(
+                f"high-risk reasons cannot be bulk confirmed: {sorted(high_risk)}"
+            )
+
         for item in group.items:
             source = conn.execute(
                 "SELECT * FROM source_transactions WHERE id = ?", (item.source_id,)
@@ -164,12 +195,23 @@ def confirm_group(
 
 
 def promote_rule(db_path, rule_id: int) -> bool:
-    """把观察期规则提升为自动入账（经用户验证）；已在队列的观察项保持待处理。"""
+    """把观察期规则提升为自动入账（经用户验证）；已在队列的观察项保持待处理。
+
+    空匹配模式规则禁止提升（红队 P1：空模式会匹配全部交易）。
+    """
     with connect(db_path) as conn:
         return _promote_rule(conn, rule_id)
 
 
 def _promote_rule(conn, rule_id: int) -> bool:
+    rule = conn.execute(
+        "SELECT match_pattern, status FROM classification_rules WHERE id = ?",
+        (rule_id,),
+    ).fetchone()
+    if rule is None or rule["status"] != "observing":
+        return False
+    if not rule["match_pattern"].strip():
+        return False
     cur = conn.execute(
         """
         UPDATE classification_rules
