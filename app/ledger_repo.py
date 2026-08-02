@@ -514,6 +514,43 @@ def list_refund_links(db_path, *, original_ledger_id: int | None = None):
         ).fetchall()
 
 
+def list_consumption_with_refunds(db_path, *, start: str, end: str):
+    """消费账本（含已关联退款总额与净成本）。
+
+    跨期退款按原消费周期回写：退款金额归入原消费的 txn_date 周期。
+    """
+    with connect(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT
+              le.id,
+              le.amount_cents,
+              le.category,
+              le.txn_date,
+              le.note,
+              le.manual_edited,
+              le.source_transaction_id,
+              le.batch_id,
+              COALESCE(SUM(rl.refund_amount_cents), 0) AS refunded_cents
+            FROM ledger_entries AS le
+            LEFT JOIN refund_links AS rl ON rl.original_ledger_id = le.id
+            WHERE le.entry_type = 'consumption'
+              AND le.txn_date >= ? AND le.txn_date <= ?
+            GROUP BY le.id
+            ORDER BY le.txn_date DESC, le.id DESC
+            """,
+            (start, end),
+        ).fetchall()
+        return [
+            {
+                **dict(row),
+                "refunded_cents": int(row["refunded_cents"]),
+                "net_cost_cents": int(row["amount_cents"]) - int(row["refunded_cents"]),
+            }
+            for row in rows
+        ]
+
+
 # ── Classification rules ──
 
 
