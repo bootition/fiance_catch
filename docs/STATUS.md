@@ -14,15 +14,16 @@
 | 产品方向 | ✅ 已获用户确认，正在实施：本地单用户账单驱动个人财务系统（逐笔落库、规则优先人工确认、第一版不接 AI） | `docs/decisions/01_refactor_spec.md` |
 | 重构阶段 1 | ✅ 复审通过：P1/P2 修复已验证；生产 `init_db()` 后 `/` 返回维护页（200），旧路由已禁用（404） | `docs/reports/02_phase1_fix_review_2026-08-01.md`（approved） |
 | 重构阶段 2 | ✅ 修复复审通过：单事务原子导入、失败回滚/重传、空单号拒绝和零金额保留均已验证 | `docs/reports/04_phase2_fix_review_2026-08-01.md` |
-| 重构阶段 3 | ✅ 修复红队复审通过：P1 schema 版本化迁移（schema_version=3，旧 v2 库自动补 raw_type + 重建规则表加空模式 CHECK，事务内升级，正式库已实测验证）；P2 批量确认事务内同步受影响批次真实 pending_count（含跨批次分组） | `docs/decisions/01_refactor_spec.md` §2.1/§3.3/§3.5/§5/§7.3、`docs/reports/06_phase3_fix_red_team_review_2026-08-01.md` + 本会话修复 |
+| 重构阶段 3 | 🔄 二次红队复审未通过：正式库升级与跨批次计数已修复，但阶段 2 可存在的空规则会使 v3 规则表重建失败并阻止应用启动 | `docs/reports/07_phase3_second_red_team_review_2026-08-01.md` |
 | 当前产品面 | ✅ `/` 为 v2 迁移状态维护页；旧页面路由已下线，阶段 5 重建 | `app/routers/status.py` |
-| 测试基线 | ✅ 直接 `pytest` 171 项通过（新增：阶段 2 旧 v2 库升级路径 3 项、批量确认计数同步/跨批次 2 项；正式库验证 raw_type+CHECK+版本号=3） | `tests/test_migration_v2.py`、`tests/test_red_team_phase3.py` |
+| 测试基线 | ⚠️ 直接 `pytest` 171 项通过，正式库 v3 升级通过；未覆盖阶段 2 遗留空规则的升级路径 | `docs/reports/07_phase3_second_red_team_review_2026-08-01.md` |
 
 （✅=已通过 🔄=进行中 ⏳=待执行）
 
 ## 已知剩余缺口（诚实披露）
 
-1. 重构阶段 4~6 未实施：退款候选匹配与跨期回写、页面重建、端到端测试（见 `decisions/01` §7）。
+1. 重构阶段 3 当前阻塞：阶段 2 可存在的空规则使 v3 迁移重建规则表失败，导致应用无法启动。详见 `reports/07_phase3_second_red_team_review_2026-08-01.md`。
+2. 重构阶段 4~6 未实施：退款候选匹配与跨期回写、页面重建、端到端测试（见 `decisions/01` §7）。
 2. **正式库已完成重置**（2026-08-01 15:00，备份 `ledger.sqlite-20260801-150000.bak`、`ledger.sqlite-20260801-150040.bak`）；旧页面在阶段 5 重建前不可用，当前仅提供 `/` 维护状态页；正式库 schema 已升级至 version 3（raw_type + 规则 CHECK 已验证）。
 3. 重构规格中的待定项：in-memory 批量删除令牌是否替换（见 `decisions/03` 跟进候选）。
 4. 阶段 3 边界说明：退款行已入队（refund_pending）但匹配原消费属阶段 4；提现/人际的受约束逐笔确认命令保留到阶段 4；页面（概览/待确认/规则/批次）属阶段 5。
@@ -30,7 +31,7 @@
 
 ## 进行中的工作
 
-- 账单驱动重构：阶段 3 修复红队复审通过（2026-08-01，`docs/reports/06_phase3_fix_red_team_review_2026-08-01.md`）；下一步阶段 4（退款候选匹配、人工关联、跨期回写、安全批次撤销），待用户安排
+- 账单驱动重构：阶段 3 待修复遗留空规则的 v3 升级策略；重新红队复审通过后才能进入阶段 4
 
 ## 当前有效文档（Current Truth）
 
