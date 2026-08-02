@@ -16,9 +16,9 @@
 | 重构阶段 2 | ✅ 修复复审通过：单事务原子导入、失败回滚/重传、空单号拒绝和零金额保留均已验证 | `docs/reports/04_phase2_fix_review_2026-08-01.md` |
 | 重构阶段 3 | ✅ 最终红队复审通过：旧 v2 空规则可安全隔离，保留有效规则并升级至 v3；高风险待办隔离、空规则防御、批次计数同步和已有库升级均已验证 | `docs/reports/08_phase3_final_red_team_review_2026-08-01.md` |
 | 重构阶段 4 | ✅ 最终红队复审通过：退款写入已收敛至受约束服务；普通来源无法伪造退款，来源一对一、候选余额与跨期净额规则均已验证 | `docs/reports/11_phase4_final_red_team_review_2026-08-01.md` |
-| 重构阶段 5 | ✅ 修复红队复审通过：删除已关联退款的记录在仓储层转为 ValueError（预检 refund_links，非裸 FK 异常），路由层捕获返回 303 + 页面提示；附带修复 flash 重定向 URL 编码（`#` 截断问题） | `docs/decisions/01_refactor_spec.md` §2.1/§2.3/§3.4/§6/§7.5、`docs/reports/13_phase5_fix_red_team_review_2026-08-01.md` + 本会话修复 |
+| 重构阶段 5 | ✅ 最终红队复审通过：页面和仓储层均安全处理已退款记录删除；规则观察期、退款统计聚合和编辑约束均已验证 | `docs/reports/14_phase5_final_red_team_review_2026-08-01.md` |
 | 当前产品面 | ✅ 全新 v2 页面已上线（旧路由已下线）；维护页与 status 路由已移除 | `app/main.py`、`templates/base.html` |
-| 测试基线 | ✅ 直接 `pytest` 219 项通过（新增：仓储层删除拒绝 + 记录/退款链接保留、页面 303+提示+统计不破坏） | `tests/test_red_team_phase5.py` |
+| 测试基线 | ✅ 直接 `pytest` 219 项通过；已退款记录删除冲突、关联保留和普通删除均已红队验证 | `docs/reports/14_phase5_final_red_team_review_2026-08-01.md` |
 
 （✅=已通过 🔄=进行中 ⏳=待执行）
 
@@ -34,7 +34,7 @@
 
 ## 进行中的工作
 
-- 账单驱动重构：阶段 5 修复红队复审通过（2026-08-01，`docs/reports/13_phase5_fix_red_team_review_2026-08-01.md`）；下一步阶段 6（端到端测试：匿名化固定样本），待用户安排
+- 账单驱动重构：阶段 5 最终红队复审通过（2026-08-01，`docs/reports/14_phase5_final_red_team_review_2026-08-01.md`）；下一步阶段 6（端到端测试：匿名化固定样本），待用户安排
 
 ## 当前有效文档（Current Truth）
 
