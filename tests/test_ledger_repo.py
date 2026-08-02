@@ -308,9 +308,16 @@ def test_classification_rule_crud(db):
     assert rows[0]["status"] == "observing"
     assert rows[0]["target_category"] == "日常三餐"
 
-    assert update_rule_status(db, rule_id, RULE_STATUS_ACTIVE)
+    # 观察期不可直跳 active（状态机），必须经 promote_rule
+    assert not update_rule_status(db, rule_id, RULE_STATUS_ACTIVE)
+    from app.decisions.confirm import promote_rule
+
+    assert promote_rule(db, rule_id)
     assert list_classification_rules(db, status=RULE_STATUS_ACTIVE)
     assert not list_classification_rules(db, status=RULE_STATUS_DISABLED)
+    # 停用后重新启用允许
+    assert update_rule_status(db, rule_id, RULE_STATUS_DISABLED)
+    assert update_rule_status(db, rule_id, RULE_STATUS_ACTIVE)
     assert not update_rule_status(db, rule_id + 99, RULE_STATUS_ACTIVE)
 
 

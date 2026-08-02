@@ -49,12 +49,21 @@ def _prev_month(year_month: str) -> str:
 
 
 def _category_net(conn, start: str, end: str) -> dict[str, int]:
+    """按分类聚合消费净额（原金额 - 已关联退款）。
+
+    退款先在子查询按原账本预聚合，避免多笔部分退款联表放大原金额
+    （红队 P1 修复：¥50 消费关联 ¥20+¥30 退款净额应为 0）。
+    """
     rows = conn.execute(
         """
         SELECT le.category,
-               SUM(le.amount_cents) - COALESCE(SUM(rl.refund_amount_cents), 0) AS net
+               SUM(le.amount_cents - COALESCE(rl_total.refunded, 0)) AS net
         FROM ledger_entries AS le
-        LEFT JOIN refund_links AS rl ON rl.original_ledger_id = le.id
+        LEFT JOIN (
+          SELECT original_ledger_id, SUM(refund_amount_cents) AS refunded
+          FROM refund_links
+          GROUP BY original_ledger_id
+        ) AS rl_total ON rl_total.original_ledger_id = le.id
         WHERE le.entry_type = 'consumption'
           AND le.txn_date >= ? AND le.txn_date < ?
         GROUP BY le.category

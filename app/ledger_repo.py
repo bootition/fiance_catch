@@ -367,7 +367,34 @@ def update_ledger_entry(
     txn_date: str,
     note: str,
 ) -> bool:
+    """更新账本记录（仓储层强制退款不变量，红队 P1 修复）。
+
+    - 已关联退款的记录：entry_type 不可改变（防破坏退款关联语义）
+    - 消费记录：新金额不得小于已关联退款总额（防负净额）
+    """
     with connect(db_path) as conn:
+        entry = conn.execute(
+            "SELECT * FROM ledger_entries WHERE id = ?", (entry_id,)
+        ).fetchone()
+        if entry is None:
+            return False
+        refunded = int(
+            conn.execute(
+                """
+                SELECT COALESCE(SUM(refund_amount_cents), 0) AS c
+                FROM refund_links WHERE original_ledger_id = ?
+                """,
+                (entry_id,),
+            ).fetchone()["c"]
+        )
+        if refunded > 0 and entry_type != entry["entry_type"]:
+            raise ValueError(
+                "cannot change entry type of a refund-linked record"
+            )
+        if entry_type == "consumption" and amount_cents < refunded:
+            raise ValueError(
+                f"amount {amount_cents} below linked refund total {refunded}"
+            )
         cur = conn.execute(
             """
             UPDATE ledger_entries
@@ -630,7 +657,27 @@ def list_classification_rules(db_path, *, status: str | None = None):
 
 
 def update_rule_status(db_path, rule_id: int, status: str) -> bool:
+    """规则状态机（服务层强制，红队 P1 修复）。
+
+    - observing → active：必须经 promote_rule()（观察期语义，不可直跳）
+    - observing/active → disabled：允许停用
+    - disabled → active：允许重新启用
+    """
     with connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT status FROM classification_rules WHERE id = ?", (rule_id,)
+        ).fetchone()
+        if row is None:
+            return False
+        current = row["status"]
+        if status == "active":
+            if current not in ("disabled",):
+                return False
+        elif status == "disabled":
+            if current not in ("observing", "active"):
+                return False
+        else:
+            return False
         cur = conn.execute(
             """
             UPDATE classification_rules
