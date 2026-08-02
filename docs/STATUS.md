@@ -14,9 +14,9 @@
 | 产品方向 | ✅ 已获用户确认，正在实施：本地单用户账单驱动个人财务系统（逐笔落库、规则优先人工确认、第一版不接 AI） | `docs/decisions/01_refactor_spec.md` |
 | 重构阶段 1 | ✅ 复审通过：P1/P2 修复已验证；生产 `init_db()` 后 `/` 返回维护页（200），旧路由已禁用（404） | `docs/reports/02_phase1_fix_review_2026-08-01.md`（approved） |
 | 重构阶段 2 | ✅ 修复复审通过：单事务原子导入、失败回滚/重传、空单号拒绝和零金额保留均已验证 | `docs/reports/04_phase2_fix_review_2026-08-01.md` |
-| 重构阶段 3 | ✅ 二次红队复审通过：旧 v2 库含空规则时升级不失败——重建规则表过滤 `TRIM(match_pattern)<>''`，隔离数量写入 `schema_meta.migration_dropped_blank_rules` 可追溯，幂等可重复 | `docs/decisions/01_refactor_spec.md` §3.5/§7.3、`docs/reports/07_phase3_second_red_team_review_2026-08-01.md` + 本会话修复 |
+| 重构阶段 3 | ✅ 最终红队复审通过：旧 v2 空规则可安全隔离，保留有效规则并升级至 v3；高风险待办隔离、空规则防御、批次计数同步和已有库升级均已验证 | `docs/reports/08_phase3_final_red_team_review_2026-08-01.md` |
 | 当前产品面 | ✅ `/` 为 v2 迁移状态维护页；旧页面路由已下线，阶段 5 重建 | `app/routers/status.py` |
-| 测试基线 | ✅ 直接 `pytest` 172 项通过（新增：旧库含空规则升级、有效规则保留、隔离记录可追溯、重复升级幂等） | `tests/test_migration_v2.py` |
+| 测试基线 | ✅ 直接 `pytest` 172 项通过；阶段 2 旧库含空规则升级、有效规则保留、隔离记录与重复升级均已验证 | `docs/reports/08_phase3_final_red_team_review_2026-08-01.md` |
 
 （✅=已通过 🔄=进行中 ⏳=待执行）
 
@@ -27,10 +27,11 @@
 3. 重构规格中的待定项：in-memory 批量删除令牌是否替换（见 `decisions/03` 跟进候选）。
 4. 阶段 3 边界说明：退款行已入队（refund_pending）但匹配原消费属阶段 4；提现/人际的受约束逐笔确认命令保留到阶段 4；页面（概览/待确认/规则/批次）属阶段 5。
 5. 阶段 5 若需在导入历史展示无来源单号异常数，应持久化 `invalid_count`，或明确将其归入 `skipped_count`；当前仅由 `ImportResult` 返回。
+6. 若未来需要逐条追溯阶段 2 遗留空规则的隔离来源，可记录规则 ID/字段/原因；当前仅持久化隔离数量，不阻塞阶段 3。
 
 ## 进行中的工作
 
-- 账单驱动重构：阶段 3 二次红队复审通过（2026-08-01，`docs/reports/07_phase3_second_red_team_review_2026-08-01.md`）；下一步阶段 4（退款候选匹配、人工关联、跨期回写、安全批次撤销），待用户安排
+- 账单驱动重构：阶段 3 最终红队复审通过（2026-08-01，`docs/reports/08_phase3_final_red_team_review_2026-08-01.md`）；下一步阶段 4（退款候选匹配、人工关联、跨期回写、安全批次撤销），待用户安排
 
 ## 当前有效文档（Current Truth）
 
