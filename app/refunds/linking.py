@@ -10,7 +10,7 @@
 from dataclasses import dataclass
 
 from ..db import connect
-from ..ledger_repo import _add_audit_event
+from ..ledger_repo import _add_audit_event, _link_refund
 from .status import is_refund_status
 
 REASON_REFUND_PENDING = "refund_pending"
@@ -140,12 +140,11 @@ def link_refund_to_ledger(
             (original_ledger_id, review["id"]),
         )
 
-        cur = conn.execute(
-            """
-            INSERT INTO refund_links(refund_source_id, original_ledger_id, refund_amount_cents)
-            VALUES (?, ?, ?)
-            """,
-            (refund_source_id, original_ledger_id, refund["amount_cents"]),
+        link_id = _link_refund(
+            conn,
+            refund_source_id=refund_source_id,
+            original_ledger_id=original_ledger_id,
+            refund_amount_cents=refund["amount_cents"],
         )
         _add_audit_event(
             conn,
@@ -159,7 +158,7 @@ def link_refund_to_ledger(
 
         new_total = already + int(refund["amount_cents"])
         return RefundLinkResult(
-            refund_link_id=int(cur.lastrowid),
+            refund_link_id=link_id,
             original_ledger_id=original_ledger_id,
             refund_amount_cents=int(refund["amount_cents"]),
             net_cost_cents=int(entry["amount_cents"]) - new_total,

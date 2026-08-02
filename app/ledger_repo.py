@@ -477,22 +477,26 @@ def resolve_review(
 # ── Refund links ──
 
 
-def link_refund(
-    db_path,
+def _link_refund(
+    conn,
     *,
     refund_source_id: int,
     original_ledger_id: int,
     refund_amount_cents: int,
 ) -> int:
-    with connect(db_path) as conn:
-        cur = conn.execute(
-            """
-            INSERT INTO refund_links(refund_source_id, original_ledger_id, refund_amount_cents)
-            VALUES (?, ?, ?)
-            """,
-            (refund_source_id, original_ledger_id, refund_amount_cents),
-        )
-        return int(cur.lastrowid)
+    """私有连接级写入：仅供受约束退款服务（link_refund_to_ledger）在事务内调用。
+
+    不对外公开：所有业务不变量（退款来源真实性、待办、超额、一对一）由
+    app/refunds/linking.py 统一校验。
+    """
+    cur = conn.execute(
+        """
+        INSERT INTO refund_links(refund_source_id, original_ledger_id, refund_amount_cents)
+        VALUES (?, ?, ?)
+        """,
+        (refund_source_id, original_ledger_id, refund_amount_cents),
+    )
+    return int(cur.lastrowid)
 
 
 def list_refund_links(db_path, *, original_ledger_id: int | None = None):

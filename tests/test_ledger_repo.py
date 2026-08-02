@@ -18,7 +18,6 @@ from app.ledger_repo import (
     get_import_batch,
     get_ledger_entry,
     get_source_transaction,
-    link_refund,
     list_audit_events,
     list_classification_rules,
     list_import_batches,
@@ -256,8 +255,16 @@ def test_review_queue_priority_ordering(db):
 # ── refund_links ──
 
 
-def test_refund_link(db):
+def test_refund_link_through_service(db):
+    """退款关联只经受约束服务（link_refund_to_ledger），公开低层入口已封闭。"""
+    from app.refunds.linking import link_refund_to_ledger
+
     refund_source, _ = _source(db, "REFUND")
+    with sqlite3.connect(db) as conn:
+        conn.execute(
+            "UPDATE source_transactions SET status_text = '退款成功' WHERE id = ?",
+            (refund_source,),
+        )
     entry_id = create_ledger_entry(
         db,
         entry_type="consumption",
@@ -265,16 +272,24 @@ def test_refund_link(db):
         category="日常三餐",
         txn_date="2026-07-01",
     )
-    link_id = link_refund(
+    enqueue_review(
         db,
-        refund_source_id=refund_source,
-        original_ledger_id=entry_id,
-        refund_amount_cents=2500,
+        source_transaction_id=refund_source,
+        reason="refund_pending",
+        priority=5,
     )
+    result = link_refund_to_ledger(db, refund_source, entry_id)
     links = list_refund_links(db, original_ledger_id=entry_id)
     assert len(links) == 1
-    assert links[0]["id"] == link_id
+    assert links[0]["id"] == result.refund_link_id
     assert int(links[0]["refund_amount_cents"]) == 2500
+
+
+def test_no_public_low_level_refund_write(db):
+    """复审 P1：公开低层 link_refund 写入入口必须不存在。"""
+    import app.ledger_repo as repo
+
+    assert not hasattr(repo, "link_refund")
 
 
 # ── classification_rules ──
