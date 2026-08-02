@@ -299,3 +299,64 @@ def test_upgraded_lib_supports_import_and_decisions(tmp_path):
     processed = process_batch(settings.db_path, result.batch_id)
     assert processed.queued == 1
     assert list_review_queue(settings.db_path)[0]["reason"] == "person_transfer"
+
+
+def _add_stage2_blank_rule(db_path):
+    """模拟阶段 2 合法写入的空模式规则（无 CHECK 的旧表允许）。"""
+    conn = sqlite3.connect(str(db_path))
+    conn.execute(
+        """
+        INSERT INTO classification_rules(
+          match_field, match_pattern, target_type, target_category, status
+        )
+        VALUES ('counterparty', '', 'consumption', 'bad', 'active')
+        """
+    )
+    conn.commit()
+    conn.close()
+
+
+def test_init_db_upgrade_with_blank_rule_isolated(tmp_path):
+    """二次红队 P1：旧库含空模式规则时升级不失败，隔离并记录。"""
+    settings = _settings(tmp_path)
+    init_db(settings)
+    _downgrade_to_stage2_v2_schema(settings.db_path)
+    _add_stage2_blank_rule(settings.db_path)
+    with sqlite3.connect(str(settings.db_path)) as conn:
+        conn.execute(
+            """
+            INSERT INTO classification_rules(
+              match_field, match_pattern, target_type, target_category, status
+            )
+            VALUES ('counterparty', '有效商户', 'consumption', '日常三餐', 'observing')
+            """
+        )
+        conn.commit()
+
+    init_db(settings)  # 不应抛异常
+
+    with sqlite3.connect(str(settings.db_path)) as conn:
+        conn.row_factory = sqlite3.Row
+        version = conn.execute(
+            "SELECT value FROM schema_meta WHERE key = 'schema_version'"
+        ).fetchone()
+        assert version["value"] == "3"
+        rules = conn.execute(
+            "SELECT match_pattern, status FROM classification_rules ORDER BY id"
+        ).fetchall()
+        assert [r["match_pattern"] for r in rules] == ["有效商户"]  # 空规则被隔离
+        dropped = conn.execute(
+            "SELECT value FROM schema_meta WHERE key = 'migration_dropped_blank_rules'"
+        ).fetchone()
+        assert dropped is not None and dropped["value"] == "1"
+
+    # 幂等：再次升级不重复隔离、不报错
+    init_db(settings)
+    with sqlite3.connect(str(settings.db_path)) as conn:
+        conn.row_factory = sqlite3.Row
+        rules = conn.execute("SELECT match_pattern FROM classification_rules").fetchall()
+        assert [r["match_pattern"] for r in rules] == ["有效商户"]
+        dropped = conn.execute(
+            "SELECT value FROM schema_meta WHERE key = 'migration_dropped_blank_rules'"
+        ).fetchone()
+        assert dropped["value"] == "1"

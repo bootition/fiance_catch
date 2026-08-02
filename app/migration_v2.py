@@ -251,9 +251,21 @@ def _classification_rules_has_blank_check(conn: sqlite3.Connection) -> bool:
     return "trim(match_pattern)<>''" in normalized
 
 
-def _rebuild_classification_rules(conn: sqlite3.Connection) -> None:
-    """重建 classification_rules 以加入空模式 CHECK（保留数据与索引）。"""
+def _rebuild_classification_rules(conn: sqlite3.Connection) -> int:
+    """重建 classification_rules 以加入空模式 CHECK。
+
+    阶段 2 允许空 match_pattern 的规则无业务意义且会使新 CHECK 失败，
+    迁移时过滤不复制；返回被隔离的空白模式规则数量（可追溯）。
+    """
     conn.execute("ALTER TABLE classification_rules RENAME TO classification_rules__legacy")
+    dropped = int(
+        conn.execute(
+            """
+            SELECT COUNT(*) AS c FROM classification_rules__legacy
+            WHERE TRIM(match_pattern) = ''
+            """
+        ).fetchone()["c"]
+    )
     conn.execute(
         """
         CREATE TABLE classification_rules (
@@ -280,6 +292,7 @@ def _rebuild_classification_rules(conn: sqlite3.Connection) -> None:
           id, match_field, match_pattern, target_type, target_category,
           status, hit_count, confirm_count, created_at, updated_at
         FROM classification_rules__legacy
+        WHERE TRIM(match_pattern) <> ''
         ORDER BY id ASC
         """
     )
@@ -288,6 +301,7 @@ def _rebuild_classification_rules(conn: sqlite3.Connection) -> None:
         "CREATE INDEX IF NOT EXISTS idx_classification_rules_status "
         "ON classification_rules(status, id)"
     )
+    return dropped
 
 
 def _current_schema_version(conn: sqlite3.Connection) -> int | None:
@@ -314,7 +328,15 @@ def _migrate_v2_schema(conn: sqlite3.Connection) -> None:
         return
     _ensure_v2_columns(conn)
     if not _classification_rules_has_blank_check(conn):
-        _rebuild_classification_rules(conn)
+        dropped = _rebuild_classification_rules(conn)
+        if dropped > 0:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO schema_meta(key, value)
+                VALUES (?, ?)
+                """,
+                ("migration_dropped_blank_rules", str(dropped)),
+            )
     conn.execute(
         """
         INSERT OR REPLACE INTO schema_meta(key, value)
