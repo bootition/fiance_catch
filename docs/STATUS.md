@@ -15,9 +15,9 @@
 | 重构阶段 1 | ✅ 复审通过：P1/P2 修复已验证；生产 `init_db()` 后 `/` 返回维护页（200），旧路由已禁用（404） | `docs/reports/02_phase1_fix_review_2026-08-01.md`（approved） |
 | 重构阶段 2 | ✅ 修复复审通过：单事务原子导入、失败回滚/重传、空单号拒绝和零金额保留均已验证 | `docs/reports/04_phase2_fix_review_2026-08-01.md` |
 | 重构阶段 3 | ✅ 最终红队复审通过：旧 v2 空规则可安全隔离，保留有效规则并升级至 v3；高风险待办隔离、空规则防御、批次计数同步和已有库升级均已验证 | `docs/reports/08_phase3_final_red_team_review_2026-08-01.md` |
-| 重构阶段 4 | ✅ 修复红队复审通过：公开低层 `ledger_repo.link_refund()` 已封闭为私有连接级 helper（`_link_refund`，仅供受约束服务事务内调用）；全仓库 refund_links 写入仅剩私有 helper 与迁移两处；所有公开退款关联只经 `link_refund_to_ledger()` | `docs/decisions/01_refactor_spec.md` §2.1/§2.3/§5/§7.4、`docs/reports/10_phase4_fix_red_team_review_2026-08-01.md` + 本会话修复 |
+| 重构阶段 4 | ✅ 最终红队复审通过：退款写入已收敛至受约束服务；普通来源无法伪造退款，来源一对一、候选余额与跨期净额规则均已验证 | `docs/reports/11_phase4_final_red_team_review_2026-08-01.md` |
 | 当前产品面 | ✅ `/` 为 v2 迁移状态维护页；旧页面路由已下线，阶段 5 重建 | `app/routers/status.py` |
-| 测试基线 | ✅ 直接 `pytest` 195 项通过（新增：公开低层入口不存在回归、旧测试改走受约束服务） | `tests/test_ledger_repo.py` |
+| 测试基线 | ✅ 直接 `pytest` 195 项通过；退款写入口封闭和普通收入伪造退款拒绝已红队验证 | `docs/reports/11_phase4_final_red_team_review_2026-08-01.md` |
 
 （✅=已通过 🔄=进行中 ⏳=待执行）
 
@@ -29,10 +29,11 @@
 4. 阶段 3 边界说明：退款行已入队（refund_pending）但匹配原消费属阶段 4；提现/人际的受约束逐笔确认命令保留到阶段 4；页面（概览/待确认/规则/批次）属阶段 5。
 5. 阶段 5 若需在导入历史展示无来源单号异常数，应持久化 `invalid_count`，或明确将其归入 `skipped_count`；当前仅由 `ImportResult` 返回。
 6. 若未来需要逐条追溯阶段 2 遗留空规则的隔离来源，可记录规则 ID/字段/原因；当前仅持久化隔离数量，不阻塞阶段 3。
+7. 若未来需要逐条追溯 v4 迁移清理的多重退款关联，可记录退款来源、保留与隔离关联的 ID；当前仅持久化清理数量，不阻塞阶段 4。
 
 ## 进行中的工作
 
-- 账单驱动重构：阶段 4 修复红队复审通过（2026-08-01，`docs/reports/10_phase4_fix_red_team_review_2026-08-01.md`）；下一步阶段 5（重建页面：概览/导入/待确认/流水/规则/批次 + 简易补账），待用户安排
+- 账单驱动重构：阶段 4 最终红队复审通过（2026-08-01，`docs/reports/11_phase4_final_red_team_review_2026-08-01.md`）；下一步阶段 5（重建页面：概览/导入/待确认/流水/规则/批次 + 简易补账），待用户安排
 
 ## 当前有效文档（Current Truth）
 
