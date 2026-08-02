@@ -414,7 +414,16 @@ def update_ledger_entry(
 
 
 def delete_ledger_entry(db_path, entry_id: int) -> bool:
+    """删除账本记录；已关联退款的记录拒绝删除（FK RESTRICT 冲突转为业务错误）。"""
     with connect(db_path) as conn:
+        linked = conn.execute(
+            "SELECT id FROM refund_links WHERE original_ledger_id = ? LIMIT 1",
+            (entry_id,),
+        ).fetchone()
+        if linked is not None:
+            raise ValueError(
+                f"record #{entry_id} has linked refunds, cannot delete"
+            )
         cur = conn.execute(
             "DELETE FROM ledger_entries WHERE id = ?", (entry_id,)
         )

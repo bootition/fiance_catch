@@ -242,3 +242,48 @@ def test_edit_page_rejects_refunded_lower_amount(client):
     assert response.status_code == 303
     stats = overview_stats(settings.db_path, "2026-07")
     assert stats["total_consumption_cents"] == 1000  # 净额未被破坏
+
+
+# ── P1：删除已关联退款的消费不返回 500 ──
+
+
+def test_delete_refund_linked_entry_rejected_at_repo(client):
+    """仓储层：已关联退款的记录删除 → ValueError（非 500 的 IntegrityError）。"""
+    c, settings = client
+    _setup_partial_refunded_consumption(c, settings)
+    ledger = list_ledger_entries(settings.db_path)
+    refunded_entry = next(e for e in ledger if e["amount_cents"] == 5000)
+
+    from app.ledger_repo import delete_ledger_entry
+
+    with pytest.raises(ValueError, match="linked refunds"):
+        delete_ledger_entry(settings.db_path, refunded_entry["id"])
+    # 记录与退款链接均保留
+    assert get_ledger_entry(settings.db_path, refunded_entry["id"]) is not None
+    from app.ledger_repo import list_refund_links
+
+    assert len(list_refund_links(settings.db_path, original_ledger_id=refunded_entry["id"])) == 2
+
+
+def test_delete_refund_linked_entry_page_no_500(client):
+    """路由层：删除已关联退款消费 → 303 + 提示，不返回 500，统计不破坏。"""
+    c, settings = client
+    _setup_partial_refunded_consumption(c, settings)
+    ledger = list_ledger_entries(settings.db_path)
+    refunded_entry = next(e for e in ledger if e["amount_cents"] == 5000)
+
+    response = c.post(
+        f"/transactions/{refunded_entry['id']}/delete",
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    assert "flash=" in response.headers["location"]
+    # 跟随重定向：页面显示业务提示而非 500
+    followed = c.get(response.headers["location"].split("?")[1] and f"/transactions?{response.headers['location'].split('?')[1]}")
+    assert followed.status_code == 200
+    assert "删除失败" in followed.text
+    assert "linked refunds" in followed.text or "关联退款" in followed.text
+    # 记录仍在、退款链接仍在、统计未被破坏
+    assert get_ledger_entry(settings.db_path, refunded_entry["id"]) is not None
+    stats = overview_stats(settings.db_path, "2026-07")
+    assert stats["total_consumption_cents"] == 1000

@@ -1,4 +1,5 @@
 from datetime import date
+from urllib.parse import quote
 
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -61,6 +62,7 @@ def transactions_list(
     platform: str | None = None,
     batch_id: int | None = None,
     manual_only: bool = False,
+    flash: str | None = None,
 ):
     settings = current_settings()
     default_start, default_end = _default_range()
@@ -93,7 +95,7 @@ def transactions_list(
         "categories": list_categories_used(settings.db_path),
         "batches": _batch_options(settings.db_path),
         "type_labels": {"consumption": "消费", "income": "收入", "transfer": "调拨", "refund": "退款"},
-        "flash": None,
+        "flash": flash,
     }
     return templates.TemplateResponse(request, "transactions.html", context)
 
@@ -176,12 +178,15 @@ def transactions_edit(
         flash = f"已更新 #{entry_id}（人工改动已标记）"
     except ValueError as exc:
         flash = f"更新失败：{exc}"
-    return RedirectResponse(f"/transactions?flash={flash}", status_code=303)
+    return RedirectResponse(f"/transactions?flash={quote(flash)}", status_code=303)
 
 
 @router.post("/transactions/{entry_id}/delete", response_class=HTMLResponse)
 def transactions_delete(request: Request, entry_id: int):
     settings = current_settings()
-    deleted = delete_ledger_entry(settings.db_path, entry_id)
-    flash = f"已删除 #{entry_id}" if deleted else f"删除失败：#{entry_id} 不存在"
-    return RedirectResponse(f"/transactions?flash={flash}", status_code=303)
+    try:
+        deleted = delete_ledger_entry(settings.db_path, entry_id)
+        flash = f"已删除 #{entry_id}" if deleted else f"删除失败：#{entry_id} 不存在"
+    except ValueError as exc:
+        flash = f"删除失败：{exc}"
+    return RedirectResponse(f"/transactions?flash={quote(flash)}", status_code=303)
