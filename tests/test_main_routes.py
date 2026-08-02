@@ -4,14 +4,29 @@ import sqlite3
 from datetime import date
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-import app.main as main
 import app.routers.review as review_router
 from app.db import init_legacy_db
 from app.router_support.settings_access import configure_settings
 from app.repo import create_txn, list_txns
+from app.routers import bulk_delete, cleanup, ledger, review
 from app.settings import Settings
+
+
+def _build_legacy_app() -> FastAPI:
+    """旧产品面专用测试 app：仅挂旧路由，配合 init_legacy_db 使用。
+
+    生产入口 app.main 已切换为 v2 状态页（只挂 status 路由），旧路由
+    在阶段 5 重建前不再挂载；本 app 保留旧页面逻辑的回归测试。
+    """
+    app = FastAPI()
+    app.include_router(ledger.router)
+    app.include_router(review.router)
+    app.include_router(cleanup.router)
+    app.include_router(bulk_delete.router)
+    return app
 
 
 def _txn_form(**overrides):
@@ -60,12 +75,11 @@ def _review_expense_summary_value(response_text: str) -> float:
 
 
 @pytest.fixture
-def client_and_settings(tmp_path, monkeypatch):
+def client_and_settings(tmp_path):
     settings = Settings(data_dir=tmp_path, db_path=tmp_path / "t.sqlite")
     init_legacy_db(settings)
-    monkeypatch.setattr(main, "settings", settings)
     configure_settings(settings)
-    with TestClient(main.app) as client:
+    with TestClient(_build_legacy_app()) as client:
         yield client, settings
 
 
