@@ -1,0 +1,187 @@
+from datetime import date
+
+from fastapi import APIRouter, Form, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
+
+from ..db import connect
+from ..ledger_repo import (
+    create_ledger_entry,
+    delete_ledger_entry,
+    update_ledger_entry,
+)
+from ..router_support.settings_access import current_settings
+from ..stats import list_categories_used, list_entries_filtered
+from ..templates_core import templates
+
+router = APIRouter(tags=["Transactions"])
+
+VALID_TYPES = ("consumption", "income", "transfer", "refund")
+
+
+def _pending_count() -> int:
+    with connect(current_settings().db_path) as conn:
+        return int(
+            conn.execute(
+                "SELECT COUNT(*) AS c FROM review_queue WHERE status = 'pending'"
+            ).fetchone()["c"]
+        )
+
+
+def _default_range() -> tuple[str, str]:
+    today = date.today()
+    start = f"{today.year}-{today.month:02d}-01"
+    return start, f"{today.year}-{today.month:02d}-{today.day:02d}"
+
+
+def _month_range(txn_date: str) -> tuple[str, str]:
+    year, month = txn_date.split("-")[:2]
+    start = f"{year}-{month}-01"
+    if month == "12":
+        end = f"{int(year) + 1}-01-01"
+    else:
+        end = f"{year}-{int(month) + 1:02d}-01"
+    return start, end
+
+
+def _batch_options(db_path) -> list[dict]:
+    with connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT id, file_name FROM import_batches ORDER BY id DESC LIMIT 50"
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+
+@router.get("/transactions", response_class=HTMLResponse)
+def transactions_list(
+    request: Request,
+    start: str | None = None,
+    end: str | None = None,
+    entry_type: str | None = None,
+    category: str | None = None,
+    platform: str | None = None,
+    batch_id: int | None = None,
+    manual_only: bool = False,
+):
+    settings = current_settings()
+    default_start, default_end = _default_range()
+    start = start or default_start
+    end = end or default_end
+    rows = list_entries_filtered(
+        settings.db_path,
+        start=start,
+        end=end + " 23:59:59" if len(end) == 10 else end,
+        entry_type=entry_type or None,
+        category=category or None,
+        platform=platform or None,
+        batch_id=batch_id,
+        manual_only=manual_only,
+    )
+    context = {
+        "request": request,
+        "active_page": "transactions",
+        "pending_count": _pending_count(),
+        "entries": rows,
+        "start": start,
+        "end": end,
+        "filters": {
+            "entry_type": entry_type or "",
+            "category": category or "",
+            "platform": platform or "",
+            "batch_id": batch_id,
+            "manual_only": manual_only,
+        },
+        "categories": list_categories_used(settings.db_path),
+        "batches": _batch_options(settings.db_path),
+        "type_labels": {"consumption": "消费", "income": "收入", "transfer": "调拨", "refund": "退款"},
+        "flash": None,
+    }
+    return templates.TemplateResponse(request, "transactions.html", context)
+
+
+@router.post("/transactions", response_class=HTMLResponse)
+def transactions_create(
+    request: Request,
+    entry_type: str = Form(...),
+    amount: str = Form(...),
+    category: str = Form(""),
+    txn_date: str = Form(...),
+    note: str = Form(""),
+):
+    settings = current_settings()
+    try:
+        from ..logic import parse_amount_to_cents
+
+        amount_cents = parse_amount_to_cents(amount)
+        if entry_type not in VALID_TYPES:
+            raise ValueError("无效交易类型")
+        entry_id = create_ledger_entry(
+            settings.db_path,
+            entry_type=entry_type,
+            amount_cents=amount_cents,
+            category=category,
+            txn_date=txn_date,
+            note=note,
+        )
+        flash = f"已补记 #{entry_id}"
+    except ValueError as exc:
+        flash = f"补记失败：{exc}"
+    start, end = _month_range(txn_date)
+    rows = list_entries_filtered(
+        settings.db_path,
+        start=start,
+        end=end,
+    )
+    context = {
+        "request": request,
+        "active_page": "transactions",
+        "pending_count": _pending_count(),
+        "entries": rows,
+        "start": start,
+        "end": end,
+        "filters": {"entry_type": "", "category": "", "platform": "", "batch_id": None, "manual_only": False},
+        "categories": list_categories_used(settings.db_path),
+        "batches": _batch_options(settings.db_path),
+        "type_labels": {"consumption": "消费", "income": "收入", "transfer": "调拨", "refund": "退款"},
+        "flash": flash,
+    }
+    return templates.TemplateResponse(request, "transactions.html", context)
+
+
+@router.post("/transactions/{entry_id}/edit", response_class=HTMLResponse)
+def transactions_edit(
+    request: Request,
+    entry_id: int,
+    entry_type: str = Form(...),
+    amount: str = Form(...),
+    category: str = Form(""),
+    txn_date: str = Form(...),
+    note: str = Form(""),
+):
+    settings = current_settings()
+    try:
+        from ..logic import parse_amount_to_cents
+
+        amount_cents = parse_amount_to_cents(amount)
+        if entry_type not in VALID_TYPES:
+            raise ValueError("无效交易类型")
+        update_ledger_entry(
+            settings.db_path,
+            entry_id,
+            entry_type=entry_type,
+            amount_cents=amount_cents,
+            category=category,
+            txn_date=txn_date,
+            note=note,
+        )
+        flash = f"已更新 #{entry_id}（人工改动已标记）"
+    except ValueError as exc:
+        flash = f"更新失败：{exc}"
+    return RedirectResponse(f"/transactions?flash={flash}", status_code=303)
+
+
+@router.post("/transactions/{entry_id}/delete", response_class=HTMLResponse)
+def transactions_delete(request: Request, entry_id: int):
+    settings = current_settings()
+    deleted = delete_ledger_entry(settings.db_path, entry_id)
+    flash = f"已删除 #{entry_id}" if deleted else f"删除失败：#{entry_id} 不存在"
+    return RedirectResponse(f"/transactions?flash={flash}", status_code=303)

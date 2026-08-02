@@ -6,7 +6,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .db import init_db
 from .router_support.settings_access import configure_settings
-from .routers import status
+from .routers import imports, inbox, overview, rules, transactions
 from .settings import get_settings
 
 
@@ -21,4 +21,8 @@ async def lifespan(_app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 _static_dir = Path(__file__).resolve().parents[1] / "static"
 app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
-app.include_router(status.router)
+app.include_router(overview.router)
+app.include_router(imports.router)
+app.include_router(inbox.router)
+app.include_router(transactions.router)
+app.include_router(rules.router)

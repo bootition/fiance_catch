@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block title %}规则 · 本地账本{% endblock %}
+{% block page_title %}分类规则{% endblock %}
+{% block content %}
+{% if flash %}<p class="note-text">{{ flash }}</p>{% endif %}
+
+<section class="card card-emphasis">
+    <div class="section-head">
+        <h2>新建规则</h2>
+        <span class="state-pill">默认观察期</span>
+    </div>
+    <form method="post" action="/rules" class="form-grid">
+        <label>
+            匹配字段
+            <select name="match_field" required>
+                <option value="counterparty">商户/交易对方</option>
+                <option value="item_desc">商品/商品说明</option>
+            </select>
+        </label>
+        <label>匹配内容 <input type="text" name="match_pattern" placeholder="如：美团外卖" required></label>
+        <label>
+            目标类型
+            <select name="target_type" required>
+                {% for value, label in type_labels.items() %}
+                    <option value="{{ value }}">{{ label }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label>
+            目标分类
+            <input type="text" name="target_category" list="rule-cats">
+        </label>
+        <datalist id="rule-cats">
+            {% for cat in categories %}<option value="{{ cat }}"></option>{% endfor %}
+        </datalist>
+        <button type="submit" class="primary-action">创建观察规则</button>
+    </form>
+</section>
+
+<section class="card">
+    <div class="section-head">
+        <h2>规则列表</h2>
+    </div>
+    <table>
+        <thead>
+        <tr>
+            <th>ID</th><th>匹配</th><th>目标</th><th>状态</th>
+            <th>命中</th><th>确认</th><th>操作</th>
+        </tr>
+        </thead>
+        <tbody>
+        {% for rule in rules %}
+            <tr>
+                <td>#{{ rule.id }}</td>
+                <td>{{ field_labels.get(rule.match_field, rule.match_field) }} 含「{{ rule.match_pattern }}」</td>
+                <td>{{ type_labels.get(rule.target_type, rule.target_type) }} / {{ rule.target_category or "—" }}</td>
+                <td>{{ status_labels.get(rule.status, rule.status) }}</td>
+                <td>{{ rule.hit_count }}</td>
+                <td>{{ rule.confirm_count }}</td>
+                <td class="inline-actions">
+                    <a class="button-link quiet-link" href="/rules?rule_id={{ rule.id }}">命中历史</a>
+                    {% if rule.status == "observing" %}
+                        <form method="post" action="/rules/{{ rule.id }}/promote">
+                            <button type="submit" class="secondary">提升为自动入账</button>
+                        </form>
+                    {% endif %}
+                    {% if rule.status != "disabled" %}
+                        <form method="post" action="/rules/{{ rule.id }}/status/disabled">
+                            <button type="submit" class="secondary">停用</button>
+                        </form>
+                    {% else %}
+                        <form method="post" action="/rules/{{ rule.id }}/status/active">
+                            <button type="submit" class="secondary">启用</button>
+                        </form>
+                    {% endif %}
+                </td>
+            </tr>
+        {% else %}
+            <tr><td colspan="7">暂无规则</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</section>
+
+{% if selected_rule_id is not none %}
+<section class="card card-secondary">
+    <div class="section-head">
+        <h2>规则 #{{ selected_rule_id }} 命中历史</h2>
+    </div>
+    <table>
+        <thead><tr><th>事件</th><th>详情</th><th>时间</th></tr></thead>
+        <tbody>
+        {% for event in history %}
+            <tr>
+                <td>{{ event.event_type }}</td>
+                <td>{{ event.detail }}</td>
+                <td>{{ event.created_at }}</td>
+            </tr>
+        {% else %}
+            <tr><td colspan="3">暂无命中记录</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</section>
+{% endif %}
+{% endblock %}

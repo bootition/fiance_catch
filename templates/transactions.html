@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% block title %}流水 · 本地账本{% endblock %}
+{% block page_title %}流水{% endblock %}
+{% block content %}
+{% if flash %}<p class="note-text">{{ flash }}</p>{% endif %}
+
+<section class="card card-secondary">
+    <div class="section-head">
+        <h2>筛选</h2>
+    </div>
+    <form method="get" action="/transactions" class="form-grid compact-form">
+        <label>开始 <input type="date" name="start" value="{{ start }}"></label>
+        <label>结束 <input type="date" name="end" value="{{ end }}"></label>
+        <label>
+            类型
+            <select name="entry_type">
+                <option value="">全部</option>
+                {% for value, label in type_labels.items() %}
+                    <option value="{{ value }}" {% if filters.entry_type == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label>
+            分类
+            <select name="category">
+                <option value="">全部</option>
+                {% for cat in categories %}
+                    <option value="{{ cat }}" {% if filters.category == cat %}selected{% endif %}>{{ cat }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label>
+            平台
+            <select name="platform">
+                <option value="">全部</option>
+                <option value="alipay" {% if filters.platform == "alipay" %}selected{% endif %}>支付宝</option>
+                <option value="wechat" {% if filters.platform == "wechat" %}selected{% endif %}>微信</option>
+            </select>
+        </label>
+        <label>
+            批次
+            <select name="batch_id">
+                <option value="">全部</option>
+                {% for b in batches %}
+                    <option value="{{ b.id }}" {% if filters.batch_id == b.id %}selected{% endif %}>#{{ b.id }} {{ b.file_name }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label>
+            仅人工改动
+            <select name="manual_only">
+                <option value="">全部</option>
+                <option value="true" {% if filters.manual_only %}selected{% endif %}>是</option>
+            </select>
+        </label>
+        <button type="submit" class="secondary">应用筛选</button>
+    </form>
+</section>
+
+<section class="card card-emphasis">
+    <div class="section-head">
+        <h2>简易补账</h2>
+        <span class="state-pill">手动新增</span>
+    </div>
+    <form method="post" action="/transactions" class="form-grid">
+        <label>
+            类型
+            <select name="entry_type" required>
+                {% for value, label in type_labels.items() %}
+                    <option value="{{ value }}">{{ label }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label>金额（元）<input type="text" name="amount" placeholder="12.34" required></label>
+        <label>
+            分类
+            <input type="text" name="category" list="cat-options">
+        </label>
+        <datalist id="cat-options">
+            {% for cat in categories %}<option value="{{ cat }}"></option>{% endfor %}
+        </datalist>
+        <label>日期 <input type="date" name="txn_date" required></label>
+        <label>备注 <input type="text" name="note"></label>
+        <button type="submit" class="primary-action">补记</button>
+    </form>
+</section>
+
+<section class="card">
+    <div class="section-head">
+        <h2>流水明细</h2>
+    </div>
+    <table>
+        <thead>
+        <tr>
+            <th>日期</th><th>类型</th><th>分类</th><th>金额（元）</th>
+            <th>退款（元）</th><th>来源</th><th>人工</th><th>备注</th><th></th>
+        </tr>
+        </thead>
+        <tbody>
+        {% for entry in entries %}
+            <tr>
+                <td>{{ entry.txn_date }}</td>
+                <td>{{ type_labels.get(entry.entry_type, entry.entry_type) }}</td>
+                <td>{{ entry.category or "—" }}</td>
+                <td>{{ "%.2f"|format(entry.amount_cents / 100) }}</td>
+                <td>{% if entry.refunded_cents %}{{ "%.2f"|format(entry.refunded_cents / 100) }}{% else %}—{% endif %}</td>
+                <td>
+                    {% if entry.counterparty %}{{ entry.counterparty }}<br>{% endif %}
+                    {% if entry.platform %}<small>{{ "支付宝" if entry.platform == "alipay" else "微信" }} · {{ entry.status_text }}</small>{% endif %}
+                    {% if entry.batch_id %}<small>批次#{{ entry.batch_id }}</small>{% endif %}
+                </td>
+                <td>{% if entry.manual_edited %}是{% else %}—{% endif %}</td>
+                <td>{{ entry.note or "—" }}</td>
+                <td>
+                    <form method="post" action="/transactions/{{ entry.id }}/delete" onsubmit="return confirm('删除该流水？')">
+                        <button type="submit" class="secondary">删</button>
+                    </form>
+                </td>
+            </tr>
+        {% else %}
+            <tr><td colspan="9">无匹配流水</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</section>
+{% endblock %}

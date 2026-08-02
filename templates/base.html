@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}本地账本{% endblock %}</title>
+    <link rel="stylesheet" href="/static/app.css">
+    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+</head>
+<body>
+<main class="container">
+    <header class="page-header">
+        <div class="title-block">
+            <p class="eyebrow">掌控经济</p>
+            <h1>{% block page_title %}本地账本{% endblock %}</h1>
+        </div>
+        <nav class="inline-actions page-nav">
+            <a class="button-link {% if active_page == 'overview' %}is-active{% endif %}" href="/">概览</a>
+            <a class="button-link {% if active_page == 'imports_new' %}is-active{% endif %}" href="/imports/new">导入</a>
+            <a class="button-link {% if active_page == 'inbox' %}is-active{% endif %}" href="/inbox">待确认{% if pending_count is not none and pending_count > 0 %}（{{ pending_count }}）{% endif %}</a>
+            <a class="button-link {% if active_page == 'transactions' %}is-active{% endif %}" href="/transactions">流水</a>
+            <a class="button-link {% if active_page == 'rules' %}is-active{% endif %}" href="/rules">规则</a>
+            <a class="button-link {% if active_page == 'imports' %}is-active{% endif %}" href="/imports">批次</a>
+        </nav>
+    </header>
+
+    {% block content %}{% endblock %}
+</main>
+</body>
+</html>

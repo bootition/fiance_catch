@@ -386,6 +386,14 @@ def update_ledger_entry(
         return int(cur.rowcount) > 0
 
 
+def delete_ledger_entry(db_path, entry_id: int) -> bool:
+    with connect(db_path) as conn:
+        cur = conn.execute(
+            "DELETE FROM ledger_entries WHERE id = ?", (entry_id,)
+        )
+        return int(cur.rowcount) > 0
+
+
 # ── Review queue ──
 
 

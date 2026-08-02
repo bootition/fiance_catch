@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}导入批次 · 本地账本{% endblock %}
+{% block page_title %}导入批次{% endblock %}
+{% block content %}
+{% if flash %}<p class="note-text">{{ flash }}</p>{% endif %}
+<section class="card">
+    <div class="section-head">
+        <h2>批次列表</h2>
+    </div>
+    <table>
+        <thead>
+        <tr>
+            <th>ID</th>
+            <th>文件</th>
+            <th>平台</th>
+            <th>导入时间</th>
+            <th>总行数</th>
+            <th>入账</th>
+            <th>跳过</th>
+            <th>待确认</th>
+            <th>状态</th>
+            <th>操作</th>
+        </tr>
+        </thead>
+        <tbody>
+        {% for batch in batches %}
+            <tr>
+                <td>#{{ batch.id }}</td>
+                <td>{{ batch.file_name }}</td>
+                <td>{{ "支付宝" if batch.platform == "alipay" else "微信" }}</td>
+                <td>{{ batch.imported_at }}</td>
+                <td>{{ batch.row_count }}</td>
+                <td>{{ batch.accepted_count }}</td>
+                <td>{{ batch.skipped_count }}</td>
+                <td>{{ batch.pending_count }}</td>
+                <td>{{ "已撤销" if batch.status == "revoked" else "有效" }}</td>
+                <td>
+                    {% if batch.status == "active" %}
+                        <form method="post" action="/imports/{{ batch.id }}/revoke" onsubmit="return confirm('确定撤销该批次？已编辑/已关联记录将保留并列出。')">
+                            <button type="submit" class="secondary">撤销</button>
+                        </form>
+                    {% else %}
+                        —
+                    {% endif %}
+                </td>
+            </tr>
+        {% else %}
+            <tr><td colspan="10">暂无导入批次</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</section>
+{% endblock %}

@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}待确认 · 本地账本{% endblock %}
+{% block page_title %}待确认{% endblock %}
+{% block content %}
+{% if flash %}<p class="note-text">{{ flash }}</p>{% endif %}
+
+<section class="card card-emphasis">
+    <div class="section-head">
+        <h2>高风险区</h2>
+        <span class="state-pill">需逐笔处理</span>
+    </div>
+    {% if high_risk %}
+        <table>
+            <thead>
+            <tr><th>原因</th><th>时间</th><th>对方</th><th>商品</th><th>金额（元）</th><th>平台</th></tr>
+            </thead>
+            <tbody>
+            {% for item in high_risk %}
+                <tr>
+                    <td>{{ high_risk_labels.get(item.reason, item.reason) }}</td>
+                    <td>{{ item.occurred_at }}</td>
+                    <td>{{ item.counterparty }}</td>
+                    <td>{{ item.item_desc }}</td>
+                    <td>{{ "%.2f"|format(item.amount_cents / 100) }}</td>
+                    <td>{{ "支付宝" if item.platform == "alipay" else "微信" }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        <p class="note-text">提现须逐笔选用途、退款须关联原消费、人际转账须人工定性——这些记录不参与批量确认。</p>
+    {% else %}
+        <p>高风险区暂无待处理项。</p>
+    {% endif %}
+</section>
+
+<section class="card card-secondary">
+    <div class="section-head">
+        <h2>分类区</h2>
+        <span class="state-pill">按商户分组批量确认</span>
+    </div>
+    {% if groups %}
+        <table>
+            <thead>
+            <tr><th>商户</th><th>平台</th><th>笔数</th><th>合计（元）</th><th>批量指定</th></tr>
+            </thead>
+            <tbody>
+            {% for group in groups %}
+                <tr>
+                    <td>{{ group.counterparty or "（无对方）" }}</td>
+                    <td>{{ "支付宝" if group.platform == "alipay" else "微信" }}</td>
+                    <td>{{ group.count }}</td>
+                    <td>{{ "%.2f"|format(group.total_cents / 100) }}</td>
+                    <td>
+                        <form method="post" action="/inbox/confirm" class="inline-form">
+                            <input type="hidden" name="counterparty" value="{{ group.counterparty }}">
+                            <input type="hidden" name="platform" value="{{ group.platform }}">
+                            <select name="entry_type" required>
+                                {% for value, label in type_labels.items() %}
+                                    <option value="{{ value }}" {% if group.items[0].suggested_type == value %}selected{% endif %}>{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                            <select name="category" required>
+                                <option value="">选择分类</option>
+                                {% for cat in categories %}
+                                    <option value="{{ cat }}" {% if group.items[0].suggested_category == cat %}selected{% endif %}>{{ cat }}</option>
+                                {% endfor %}
+                            </select>
+                            <button type="submit" class="secondary">确认 {{ group.count }} 项</button>
+                        </form>
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <p>分类区暂无待处理项。</p>
+    {% endif %}
+</section>
+{% endblock %}

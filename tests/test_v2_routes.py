@@ -18,15 +18,15 @@ def test_index_returns_200_after_production_migration(v2_client):
     client, _ = v2_client
     response = client.get("/")
     assert response.status_code == 200
-    assert "重构" in response.text or "迁移" in response.text
+    assert "本月概览" in response.text
 
 
-def test_index_shows_v2_schema_status(v2_client):
+def test_index_shows_overview_metrics(v2_client):
     client, _ = v2_client
     response = client.get("/")
-    assert "ledger_entries" in response.text
-    assert "source_transactions" in response.text
-    assert "v2 已初始化" in response.text
+    assert "总消费" in response.text
+    assert "总收入" in response.text
+    assert "待确认" in response.text
 
 
 def test_legacy_routes_disabled_after_migration(v2_client):
@@ -42,3 +42,13 @@ def test_index_ok_on_rerun_migrated_db(tmp_path, monkeypatch):
         assert client.get("/").status_code == 200
     with TestClient(main.app) as client:
         assert client.get("/").status_code == 200
+
+
+def test_pages_render_after_production_init(tmp_path, monkeypatch):
+    """生产 init_db 后全部新页面可访问（不 500）。"""
+    settings = Settings(data_dir=tmp_path, db_path=tmp_path / "t.sqlite")
+    monkeypatch.setattr(main, "get_settings", lambda: settings)
+    with TestClient(main.app) as client:
+        for path in ("/imports/new", "/inbox", "/transactions", "/rules", "/imports"):
+            response = client.get(path)
+            assert response.status_code == 200, f"{path} -> {response.status_code}"

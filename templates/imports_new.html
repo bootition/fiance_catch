@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}导入账单 · 本地账本{% endblock %}
+{% block page_title %}导入账单{% endblock %}
+{% block content %}
+<section class="card card-emphasis">
+    <div class="section-head">
+        <h2>上传账单</h2>
+        <span class="state-pill">支付宝 CSV / 微信 XLSX</span>
+    </div>
+    <form method="post" action="/imports/new" enctype="multipart/form-data" class="form-grid">
+        <label>
+            平台
+            <select name="platform" required>
+                <option value="alipay">支付宝</option>
+                <option value="wechat">微信</option>
+            </select>
+        </label>
+        <label class="full-width">
+            账单文件
+            <input type="file" name="file" accept=".csv,.xlsx" required>
+        </label>
+        <button type="submit" class="primary-action">导入并处理</button>
+    </form>
+    {% if request.query_params.get("error") %}
+        <p class="note-text">{{ request.query_params.get("error") }}</p>
+    {% endif %}
+</section>
+
+{% if last_result %}
+    {% if last_result.error %}
+        <p class="note-text">{{ last_result.error }}</p>
+    {% else %}
+        <section class="card">
+            <div class="section-head">
+                <h2>导入结果</h2>
+                <span class="state-pill">{{ last_result.file_name }}</span>
+            </div>
+            <table>
+                <tbody>
+                <tr><td>总行数</td><td>{{ last_result.total }}</td></tr>
+                <tr><td>新增来源流水</td><td>{{ last_result.added }}</td></tr>
+                <tr><td>重复跳过</td><td>{{ last_result.duplicates }}</td></tr>
+                <tr><td>关闭/失败跳过</td><td>{{ last_result.skipped }}</td></tr>
+                <tr><td>无效行（缺单号）</td><td>{{ last_result.invalid }}</td></tr>
+                <tr><td>退款识别</td><td>{{ last_result.refunds }}</td></tr>
+                <tr><td>自动入账</td><td>{{ last_result.auto_posted }}</td></tr>
+                <tr><td>进入待确认</td><td>{{ last_result.queued }}</td></tr>
+                </tbody>
+            </table>
+            <p class="note-text">原始文件仅在处理期间使用，不写入数据库。</p>
+        </section>
+    {% endif %}
+{% endif %}
+{% endblock %}

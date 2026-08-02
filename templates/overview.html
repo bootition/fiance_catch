@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}本月概览 · 本地账本{% endblock %}
+{% block page_title %}本月概览{% endblock %}
+{% block content %}
+<p class="page-subtitle">{{ year_month }} 月度财务概况</p>
+
+<section class="card card-emphasis">
+    <div class="section-head">
+        <h2>关键指标</h2>
+    </div>
+    <div class="grid metric-grid">
+        <div class="metric-card metric-expense">
+            <p class="metric-label">总消费（净额）</p>
+            <p class="metric-value">{{ "%.2f"|format(total_consumption_cents / 100) }}</p>
+        </div>
+        <div class="metric-card metric-income">
+            <p class="metric-label">总收入</p>
+            <p class="metric-value">{{ "%.2f"|format(total_income_cents / 100) }}</p>
+        </div>
+        <div class="metric-card">
+            <p class="metric-label">副业收入</p>
+            <p class="metric-value">{{ "%.2f"|format(side_income_cents / 100) }}</p>
+        </div>
+        <div class="metric-card">
+            <p class="metric-label">副业成本</p>
+            <p class="metric-value">{{ "%.2f"|format(side_cost_cents / 100) }}</p>
+        </div>
+        <div class="metric-card">
+            <p class="metric-label">旅游消费</p>
+            <p class="metric-value">{{ "%.2f"|format(travel_cents / 100) }}</p>
+        </div>
+        <div class="metric-card">
+            <p class="metric-label">待确认</p>
+            <p class="metric-value"><a href="/inbox">{{ pending_count }} 项</a></p>
+        </div>
+    </div>
+</section>
+
+<section class="card">
+    <div class="section-head">
+        <h2>日常消费环比</h2>
+        <span class="state-pill">仅含日常五类</span>
+    </div>
+    <p>
+        本月：<strong>{{ "%.2f"|format(daily_current_cents / 100) }}</strong>
+        ｜ 上月：{{ "%.2f"|format(daily_prev_cents / 100) }}
+        {% if daily_change_pct is not none %}
+        ｜ 环比：<strong class="{% if daily_change_pct > 0 %}metric-expense{% else %}metric-income{% endif %}">{{ "%+.1f"|format(daily_change_pct) }}%</strong>
+        {% else %}
+        ｜ 环比：上月无日常消费
+        {% endif %}
+    </p>
+</section>
+
+<section class="card card-secondary">
+    <div class="section-head">
+        <h2>消费分类排行</h2>
+    </div>
+    <table>
+        <thead>
+        <tr><th>分类</th><th>净额（元）</th></tr>
+        </thead>
+        <tbody>
+        {% for category, amount in ranking %}
+            <tr>
+                <td>{{ category or "（未分类）" }}</td>
+                <td>{{ "%.2f"|format(amount / 100) }}</td>
+            </tr>
+        {% else %}
+            <tr><td colspan="2">本月暂无消费记录</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% if non_daily %}
+        <p class="note-text">单独展示（不混入日常环比）：{% for cat, amt in non_daily.items() %}{{ cat or "未分类" }} {{ "%.2f"|format(amt / 100) }} 元{% if not loop.last %}；{% endif %}{% endfor %}</p>
+    {% endif %}
+</section>
+{% endblock %}
