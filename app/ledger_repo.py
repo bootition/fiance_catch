@@ -145,6 +145,7 @@ def insert_source_transaction(
     status_text: str,
     counterparty: str = "",
     item_desc: str = "",
+    raw_type: str = "",
     note: str = "",
     batch_id: int | None = None,
     normalized_hash: str,
@@ -161,6 +162,7 @@ def insert_source_transaction(
             status_text=status_text,
             counterparty=counterparty,
             item_desc=item_desc,
+            raw_type=raw_type,
             note=note,
             batch_id=batch_id,
             normalized_hash=normalized_hash,
@@ -178,6 +180,7 @@ def _insert_source_transaction(
     status_text: str,
     counterparty: str = "",
     item_desc: str = "",
+    raw_type: str = "",
     note: str = "",
     batch_id: int | None = None,
     normalized_hash: str,
@@ -202,11 +205,12 @@ def _insert_source_transaction(
           status_text,
           counterparty,
           item_desc,
+          raw_type,
           note,
           batch_id,
           normalized_hash
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             platform,
@@ -217,6 +221,7 @@ def _insert_source_transaction(
             status_text,
             counterparty,
             item_desc,
+            raw_type,
             note,
             batch_id,
             normalized_hash,
@@ -279,30 +284,53 @@ def create_ledger_entry(
     note: str = "",
 ) -> int:
     with connect(db_path) as conn:
-        cur = conn.execute(
-            """
-            INSERT INTO ledger_entries(
-              entry_type,
-              amount_cents,
-              category,
-              txn_date,
-              source_transaction_id,
-              batch_id,
-              note
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                entry_type,
-                amount_cents,
-                category,
-                txn_date,
-                source_transaction_id,
-                batch_id,
-                note,
-            ),
+        return _create_ledger_entry(
+            conn,
+            entry_type=entry_type,
+            amount_cents=amount_cents,
+            category=category,
+            txn_date=txn_date,
+            source_transaction_id=source_transaction_id,
+            batch_id=batch_id,
+            note=note,
         )
-        return int(cur.lastrowid)
+
+
+def _create_ledger_entry(
+    conn,
+    *,
+    entry_type: str,
+    amount_cents: int,
+    category: str = "",
+    txn_date: str,
+    source_transaction_id: int | None = None,
+    batch_id: int | None = None,
+    note: str = "",
+) -> int:
+    cur = conn.execute(
+        """
+        INSERT INTO ledger_entries(
+          entry_type,
+          amount_cents,
+          category,
+          txn_date,
+          source_transaction_id,
+          batch_id,
+          note
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            entry_type,
+            amount_cents,
+            category,
+            txn_date,
+            source_transaction_id,
+            batch_id,
+            note,
+        ),
+    )
+    return int(cur.lastrowid)
 
 
 def get_ledger_entry(db_path, entry_id: int):
@@ -313,6 +341,20 @@ def get_ledger_entry(db_path, entry_id: int):
             """,
             (entry_id,),
         ).fetchone()
+
+
+def list_ledger_entries(db_path, *, limit: int = 2000):
+    safe_limit = max(1, min(int(limit), 10000))
+    with connect(db_path) as conn:
+        cur = conn.execute(
+            """
+            SELECT * FROM ledger_entries
+            ORDER BY txn_date DESC, id DESC
+            LIMIT ?
+            """,
+            (safe_limit,),
+        )
+        return cur.fetchall()
 
 
 def update_ledger_entry(
@@ -357,26 +399,45 @@ def enqueue_review(
     suggested_type: str = "",
 ) -> int:
     with connect(db_path) as conn:
-        cur = conn.execute(
-            """
-            INSERT INTO review_queue(
-              source_transaction_id,
-              reason,
-              priority,
-              suggested_category,
-              suggested_type
-            )
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            (
-                source_transaction_id,
-                reason,
-                priority,
-                suggested_category,
-                suggested_type,
-            ),
+        return _enqueue_review(
+            conn,
+            source_transaction_id=source_transaction_id,
+            reason=reason,
+            priority=priority,
+            suggested_category=suggested_category,
+            suggested_type=suggested_type,
         )
-        return int(cur.lastrowid)
+
+
+def _enqueue_review(
+    conn,
+    *,
+    source_transaction_id: int,
+    reason: str,
+    priority: int = 1,
+    suggested_category: str = "",
+    suggested_type: str = "",
+) -> int:
+    cur = conn.execute(
+        """
+        INSERT INTO review_queue(
+          source_transaction_id,
+          reason,
+          priority,
+          suggested_category,
+          suggested_type
+        )
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (
+            source_transaction_id,
+            reason,
+            priority,
+            suggested_category,
+            suggested_type,
+        ),
+    )
+    return int(cur.lastrowid)
 
 
 def list_review_queue(db_path, *, status: str = REVIEW_PENDING, limit: int = 500):
@@ -465,19 +526,36 @@ def create_classification_rule(
     target_category: str = "",
 ) -> int:
     with connect(db_path) as conn:
-        cur = conn.execute(
-            """
-            INSERT INTO classification_rules(
-              match_field,
-              match_pattern,
-              target_type,
-              target_category
-            )
-            VALUES (?, ?, ?, ?)
-            """,
-            (match_field, match_pattern, target_type, target_category),
+        return _create_classification_rule(
+            conn,
+            match_field=match_field,
+            match_pattern=match_pattern,
+            target_type=target_type,
+            target_category=target_category,
         )
-        return int(cur.lastrowid)
+
+
+def _create_classification_rule(
+    conn,
+    *,
+    match_field: str,
+    match_pattern: str,
+    target_type: str,
+    target_category: str = "",
+) -> int:
+    cur = conn.execute(
+        """
+        INSERT INTO classification_rules(
+          match_field,
+          match_pattern,
+          target_type,
+          target_category
+        )
+        VALUES (?, ?, ?, ?)
+        """,
+        (match_field, match_pattern, target_type, target_category),
+    )
+    return int(cur.lastrowid)
 
 
 def list_classification_rules(db_path, *, status: str | None = None):
@@ -513,17 +591,21 @@ def update_rule_status(db_path, rule_id: int, status: str) -> bool:
 
 
 def bump_rule_stats(db_path, rule_id: int, *, confirmed: bool) -> bool:
-    column = "confirm_count" if confirmed else "hit_count"
     with connect(db_path) as conn:
-        cur = conn.execute(
-            f"""
-            UPDATE classification_rules
-            SET {column} = {column} + 1, updated_at = datetime('now')
-            WHERE id = ?
-            """,
-            (rule_id,),
-        )
-        return int(cur.rowcount) > 0
+        return _bump_rule_stats(conn, rule_id, confirmed=confirmed)
+
+
+def _bump_rule_stats(conn, rule_id: int, *, confirmed: bool) -> bool:
+    column = "confirm_count" if confirmed else "hit_count"
+    cur = conn.execute(
+        f"""
+        UPDATE classification_rules
+        SET {column} = {column} + 1, updated_at = datetime('now')
+        WHERE id = ?
+        """,
+        (rule_id,),
+    )
+    return int(cur.rowcount) > 0
 
 
 # ── Audit events ──
@@ -539,20 +621,39 @@ def add_audit_event(
     detail: str = "",
 ) -> int:
     with connect(db_path) as conn:
-        cur = conn.execute(
-            """
-            INSERT INTO entry_audit_events(
-              event_type,
-              ref_ledger_id,
-              ref_rule_id,
-              ref_batch_id,
-              detail
-            )
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            (event_type, ref_ledger_id, ref_rule_id, ref_batch_id, detail),
+        return _add_audit_event(
+            conn,
+            event_type=event_type,
+            ref_ledger_id=ref_ledger_id,
+            ref_rule_id=ref_rule_id,
+            ref_batch_id=ref_batch_id,
+            detail=detail,
         )
-        return int(cur.lastrowid)
+
+
+def _add_audit_event(
+    conn,
+    *,
+    event_type: str,
+    ref_ledger_id: int | None = None,
+    ref_rule_id: int | None = None,
+    ref_batch_id: int | None = None,
+    detail: str = "",
+) -> int:
+    cur = conn.execute(
+        """
+        INSERT INTO entry_audit_events(
+          event_type,
+          ref_ledger_id,
+          ref_rule_id,
+          ref_batch_id,
+          detail
+        )
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (event_type, ref_ledger_id, ref_rule_id, ref_batch_id, detail),
+    )
+    return int(cur.lastrowid)
 
 
 def list_audit_events(db_path, *, limit: int = 200):

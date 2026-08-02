@@ -99,6 +99,7 @@ def import_file(db_path, file_path: str | Path, platform: str) -> ImportResult:
                 status_text=row.status_text,
                 counterparty=row.counterparty,
                 item_desc=row.item_desc,
+                raw_type=row.raw_type,
                 note=row.note,
                 batch_id=batch_id,
                 normalized_hash=row.normalized_hash,

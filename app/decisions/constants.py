@@ -1,0 +1,42 @@
+"""正式分类与交易类型常量（规格 §2.1/§2.2）及平台特征识别关键词。"""
+
+# 正式分类
+CATEGORY_DAILY_MEALS = "日常三餐"
+CATEGORY_TRANSPORT = "出行交通"
+CATEGORY_LEARNING = "书籍学习"
+CATEGORY_ENTERTAINMENT = "日常娱乐"
+CATEGORY_TRAVEL = "旅游"
+CATEGORY_DAILY_EXPENSES = "日常缴费"
+CATEGORY_SIDE_COST = "副业成本"
+CATEGORY_SIDE_INCOME = "副业收入"
+CATEGORY_OTHER_INCOME = "其他收入"
+
+# 正式交易类型（ledger_entries.entry_type）
+TYPE_CONSUMPTION = "consumption"
+TYPE_INCOME = "income"
+TYPE_TRANSFER = "transfer"
+TYPE_REFUND = "refund"
+
+# 待确认原因
+REASON_REFUND_PENDING = "refund_pending"  # 退款待办（阶段 4 匹配原消费）
+REASON_WITHDRAWAL = "withdrawal"  # 提现到银行卡：必须逐笔选用途
+REASON_PERSON_TRANSFER = "person_transfer"  # 人际转账/红包/收款
+REASON_OTHER_NEUTRAL = "other_neutral"  # 其他不计收支资金流
+REASON_UNMATCHED = "unmatched"  # 未命中规则
+REASON_OBSERVING_RULE = "observing_rule"  # 观察期规则预填
+REASON_TRAVEL = "travel"  # 旅游类交易需用户确认
+
+# 提现识别（提现到银行卡必须逐笔选用途，绝不自动归为投资/消费）
+WITHDRAWAL_KEYWORDS = ("提现", "取现")
+
+# 调拨识别：平台余额/理财账户间资金移动，不计消费或收入。
+# 仅作用于“不计收支/中性”方向分支，正常消费的充值（如话费）不受影响。
+TRANSFER_KEYWORDS = ("余额宝", "零钱通", "理财通", "充值")
+
+# 人际转账/红包/收款：一律停在待确认，不根据平台收/支字段自动定性
+ALIPAY_PERSON_TYPES = {"转账红包", "亲友代付", "红包"}
+WECHAT_PERSON_TYPES = {"转账", "微信红包"}
+PERSON_KEYWORDS = ("转账", "红包", "收款")
+
+# 副业收入关键词（闲鱼虚拟资料经营收入，仅作预填建议，仍须用户确认）
+SIDE_INCOME_KEYWORDS = ("闲鱼", "虚拟资料")

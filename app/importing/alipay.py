@@ -120,6 +120,7 @@ def _align_cells(raw: list[str]) -> list[str]:
 
 def _normalize_row(cells: list[str]) -> NormalizedTransaction:
     occurred_at = cells[COL_TIME]
+    raw_type = cells[COL_CATEGORY]
     counterparty = cells[COL_COUNTERPARTY]
     item_desc = cells[COL_ITEM]
     direction_raw = cells[COL_DIRECTION]
@@ -149,6 +150,7 @@ def _normalize_row(cells: list[str]) -> NormalizedTransaction:
         status_text=status_text,
         counterparty=counterparty,
         item_desc=item_desc,
+        raw_type=raw_type,
         note=note,
         normalized_hash=normalized_hash,
     )

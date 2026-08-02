@@ -27,6 +27,7 @@ class NormalizedTransaction:
     status_text: str  # 平台原始状态文本，保留溯源
     counterparty: str
     item_desc: str
+    raw_type: str  # 平台原始交易分类/交易类型（人际转账、提现判定依据）
     note: str
     normalized_hash: str
 

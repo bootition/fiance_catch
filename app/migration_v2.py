@@ -94,6 +94,7 @@ def init_new_schema(conn: sqlite3.Connection) -> None:
           status_text TEXT NOT NULL,
           counterparty TEXT NOT NULL DEFAULT '',
           item_desc TEXT NOT NULL DEFAULT '',
+          raw_type TEXT NOT NULL DEFAULT '',
           note TEXT NOT NULL DEFAULT '',
           batch_id INTEGER REFERENCES import_batches(id) ON DELETE RESTRICT,
           normalized_hash TEXT NOT NULL,
@@ -223,6 +224,18 @@ _LEGACY_TABLES = (
 )
 
 
+def _ensure_v2_columns(conn: sqlite3.Connection) -> None:
+    """为已初始化的 v2 库补齐后续新增列（幂等）。"""
+    cols = {
+        row["name"]
+        for row in conn.execute("PRAGMA table_info(source_transactions)").fetchall()
+    }
+    if "raw_type" not in cols:
+        conn.execute(
+            "ALTER TABLE source_transactions ADD COLUMN raw_type TEXT NOT NULL DEFAULT ''"
+        )
+
+
 def drop_legacy_tables(conn: sqlite3.Connection) -> None:
     """删除旧业务表（索引/触发器随表删除）。幂等，表不存在时静默跳过。"""
     for table in _LEGACY_TABLES:
@@ -283,5 +296,6 @@ def ensure_ledger_v2(settings: Settings) -> bool:
                 """,
                 (LEDGER_V2_MARKER, datetime.now().isoformat(timespec="seconds")),
             )
+        _ensure_v2_columns(conn)
         conn.commit()
     return backed_up
