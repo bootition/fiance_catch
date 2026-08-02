@@ -207,3 +207,95 @@ def test_backup_db_wal_mode_consistency(tmp_path):
         assert result[0] == "ok"
         rows = conn.execute("SELECT category FROM transactions").fetchall()
         assert sorted(row["category"] for row in rows) == ["food", "shopping"]
+
+
+def _downgrade_to_stage2_v2_schema(db_path):
+    """把当前 v2 库改回阶段 2 旧形态（无 raw_type、规则表无 CHECK、无版本号）。"""
+    conn = sqlite3.connect(str(db_path))
+    conn.execute("ALTER TABLE source_transactions DROP COLUMN raw_type")
+    conn.execute("DROP TABLE classification_rules")
+    conn.execute(
+        """
+        CREATE TABLE classification_rules (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          match_field TEXT NOT NULL CHECK(match_field IN ('counterparty','item_desc')),
+          match_pattern TEXT NOT NULL,
+          target_type TEXT NOT NULL CHECK(target_type IN ('consumption','income','transfer')),
+          target_category TEXT NOT NULL DEFAULT '',
+          status TEXT NOT NULL DEFAULT 'observing' CHECK(status IN ('observing','active','disabled')),
+          hit_count INTEGER NOT NULL DEFAULT 0 CHECK(hit_count >= 0),
+          confirm_count INTEGER NOT NULL DEFAULT 0 CHECK(confirm_count >= 0),
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+        """
+    )
+    conn.execute("DELETE FROM schema_meta WHERE key = 'schema_version'")
+    conn.commit()
+    conn.close()
+
+
+def test_init_db_upgrades_stage2_v2_schema(tmp_path):
+    """阶段 2 遗留 v2 库经 init_db 升级：raw_type 列、规则 CHECK、版本号。"""
+    settings = _settings(tmp_path)
+    init_db(settings)
+    _downgrade_to_stage2_v2_schema(settings.db_path)
+
+    init_db(settings)
+
+    with sqlite3.connect(str(settings.db_path)) as conn:
+        conn.row_factory = sqlite3.Row
+        cols = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(source_transactions)").fetchall()
+        }
+        assert "raw_type" in cols
+        rule_sql = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='classification_rules'"
+        ).fetchone()["sql"]
+        assert "trim(match_pattern)<>''" in "".join(str(rule_sql).lower().split())
+        version = conn.execute(
+            "SELECT value FROM schema_meta WHERE key = 'schema_version'"
+        ).fetchone()
+        assert version is not None and version["value"] == "3"
+
+
+def test_init_db_upgrade_idempotent(tmp_path):
+    settings = _settings(tmp_path)
+    init_db(settings)
+    _downgrade_to_stage2_v2_schema(settings.db_path)
+    init_db(settings)
+    init_db(settings)
+    with sqlite3.connect(str(settings.db_path)) as conn:
+        conn.row_factory = sqlite3.Row
+        version = conn.execute(
+            "SELECT value FROM schema_meta WHERE key = 'schema_version'"
+        ).fetchone()
+        assert version["value"] == "3"
+
+
+def test_upgraded_lib_supports_import_and_decisions(tmp_path):
+    """升级后的库能正常导入与决策（含 raw_type 依赖路径）。"""
+    from app.importing.service import import_file
+    from app.decisions.engine import process_batch
+    from app.ledger_repo import list_review_queue
+
+    settings = _settings(tmp_path)
+    init_db(settings)
+    _downgrade_to_stage2_v2_schema(settings.db_path)
+    init_db(settings)
+
+    path = tmp_path / "upgrade.csv"
+    path.write_bytes(
+        (
+            "----导出信息----\n"
+            "交易时间,交易分类,交易对方,对方账号,商品说明,收/支,金额,"
+            "收/付款方式,交易状态,交易订单号,商家订单号,备注\n"
+            "2026-07-31 23:58:26,转账红包,鸿,188******65,7月份闲鱼收入,收入,27.38,"
+            "账户余额,交易成功,TXN-UP1,,\n"
+        ).encode("gb18030")
+    )
+    result = import_file(settings.db_path, path, "alipay")
+    processed = process_batch(settings.db_path, result.batch_id)
+    assert processed.queued == 1
+    assert list_review_queue(settings.db_path)[0]["reason"] == "person_transfer"

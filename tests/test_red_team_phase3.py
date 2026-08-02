@@ -30,8 +30,8 @@ def db(tmp_path):
     return settings.db_path
 
 
-def _import(db, tmp_path, rows):
-    path = tmp_path / "alipay.csv"
+def _import(db, tmp_path, rows, name="alipay.csv"):
+    path = tmp_path / name
     path.write_bytes(
         "\n".join(["----导出信息----", ALIPAY_HEADER] + rows).encode("gb18030")
     )
@@ -223,3 +223,60 @@ def test_rerun_mixed_reasons_pending_count(db, tmp_path):
     process_batch(db, result.batch_id)
     assert int(get_import_batch(db, result.batch_id)["pending_count"]) == 4
     assert len(list_review_queue(db)) == 4
+
+
+# ── P2：批量确认同步批次 pending_count ──
+
+
+def test_confirm_group_syncs_batch_pending_count(db, tmp_path):
+    rows = [
+        "2026-07-31 19:00:00,餐饮美食,美团外卖,/,外卖订单,支出,30.00,余额宝,交易成功,TXN-CP-1,,",
+        "2026-07-30 19:00:00,餐饮美食,美团外卖,/,外卖订单,支出,25.00,余额宝,交易成功,TXN-CP-2,,",
+    ]
+    result = _import(db, tmp_path, rows)
+    process_batch(db, result.batch_id)
+    assert int(get_import_batch(db, result.batch_id)["pending_count"]) == 2
+    confirm_group(
+        db,
+        "美团外卖",
+        "alipay",
+        entry_type=TYPE_CONSUMPTION,
+        category="日常三餐",
+    )
+    assert int(get_import_batch(db, result.batch_id)["pending_count"]) == 0
+
+
+def test_confirm_group_cross_batch_syncs_all_batches(db, tmp_path):
+    """同一商户分组跨两个批次：确认后两个批次的 pending_count 都同步。"""
+    r1 = _import(
+        db,
+        tmp_path,
+        ["2026-07-31 19:00:00,餐饮美食,美团外卖,/,外卖订单,支出,30.00,余额宝,交易成功,TXN-CX-1,,"],
+        name="a.csv",
+    )
+    r2 = _import(
+        db,
+        tmp_path,
+        ["2026-07-30 19:00:00,餐饮美食,美团外卖,/,外卖订单,支出,25.00,余额宝,交易成功,TXN-CX-2,,"],
+        name="b.csv",
+    )
+    process_batch(db, r1.batch_id)
+    process_batch(db, r2.batch_id)
+    assert int(get_import_batch(db, r1.batch_id)["pending_count"]) == 1
+    assert int(get_import_batch(db, r2.batch_id)["pending_count"]) == 1
+
+    groups = group_review_items(db)
+    meituan = next(g for g in groups if g.counterparty == "美团外卖")
+    assert meituan.count == 2
+
+    confirm_group(
+        db,
+        "美团外卖",
+        "alipay",
+        entry_type=TYPE_CONSUMPTION,
+        category="日常三餐",
+    )
+    assert int(get_import_batch(db, r1.batch_id)["pending_count"]) == 0
+    assert int(get_import_batch(db, r2.batch_id)["pending_count"]) == 0
+    entries = list_ledger_entries(db)
+    assert len(entries) == 2

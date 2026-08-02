@@ -5,6 +5,8 @@ from pathlib import Path
 from .settings import Settings
 
 LEDGER_V2_MARKER = "ledger_v2_init_at"
+SCHEMA_VERSION_KEY = "schema_version"
+SCHEMA_VERSION = 3  # 3 = raw_type 列 + classification_rules 空模式 CHECK
 
 
 def _connect(db_path: str | Path):
@@ -236,6 +238,92 @@ def _ensure_v2_columns(conn: sqlite3.Connection) -> None:
         )
 
 
+def _classification_rules_has_blank_check(conn: sqlite3.Connection) -> bool:
+    row = conn.execute(
+        """
+        SELECT sql FROM sqlite_master
+        WHERE type = 'table' AND name = 'classification_rules'
+        """
+    ).fetchone()
+    if row is None or row["sql"] is None:
+        return False
+    normalized = "".join(str(row["sql"]).lower().split())
+    return "trim(match_pattern)<>''" in normalized
+
+
+def _rebuild_classification_rules(conn: sqlite3.Connection) -> None:
+    """重建 classification_rules 以加入空模式 CHECK（保留数据与索引）。"""
+    conn.execute("ALTER TABLE classification_rules RENAME TO classification_rules__legacy")
+    conn.execute(
+        """
+        CREATE TABLE classification_rules (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          match_field TEXT NOT NULL CHECK(match_field IN ('counterparty','item_desc')),
+          match_pattern TEXT NOT NULL CHECK(TRIM(match_pattern) <> ''),
+          target_type TEXT NOT NULL CHECK(target_type IN ('consumption','income','transfer')),
+          target_category TEXT NOT NULL DEFAULT '',
+          status TEXT NOT NULL DEFAULT 'observing' CHECK(status IN ('observing','active','disabled')),
+          hit_count INTEGER NOT NULL DEFAULT 0 CHECK(hit_count >= 0),
+          confirm_count INTEGER NOT NULL DEFAULT 0 CHECK(confirm_count >= 0),
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO classification_rules(
+          id, match_field, match_pattern, target_type, target_category,
+          status, hit_count, confirm_count, created_at, updated_at
+        )
+        SELECT
+          id, match_field, match_pattern, target_type, target_category,
+          status, hit_count, confirm_count, created_at, updated_at
+        FROM classification_rules__legacy
+        ORDER BY id ASC
+        """
+    )
+    conn.execute("DROP TABLE classification_rules__legacy")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_classification_rules_status "
+        "ON classification_rules(status, id)"
+    )
+
+
+def _current_schema_version(conn: sqlite3.Connection) -> int | None:
+    row = conn.execute(
+        "SELECT value FROM schema_meta WHERE key = ?", (SCHEMA_VERSION_KEY,)
+    ).fetchone()
+    if row is None:
+        return None
+    try:
+        return int(row["value"])
+    except (TypeError, ValueError):
+        return None
+
+
+def _migrate_v2_schema(conn: sqlite3.Connection) -> None:
+    """把已初始化的 v2 库升级到当前 schema 版本（幂等，须在事务内调用）。
+
+    旧 v2 库（无版本号或版本 < SCHEMA_VERSION）：
+    1. source_transactions 补 raw_type 列
+    2. classification_rules 重建以加入空模式 CHECK
+    3. 写入 schema_version
+    """
+    if _current_schema_version(conn) is not None and _current_schema_version(conn) >= SCHEMA_VERSION:
+        return
+    _ensure_v2_columns(conn)
+    if not _classification_rules_has_blank_check(conn):
+        _rebuild_classification_rules(conn)
+    conn.execute(
+        """
+        INSERT OR REPLACE INTO schema_meta(key, value)
+        VALUES (?, ?)
+        """,
+        (SCHEMA_VERSION_KEY, str(SCHEMA_VERSION)),
+    )
+
+
 def drop_legacy_tables(conn: sqlite3.Connection) -> None:
     """删除旧业务表（索引/触发器随表删除）。幂等，表不存在时静默跳过。"""
     for table in _LEGACY_TABLES:
@@ -296,6 +384,6 @@ def ensure_ledger_v2(settings: Settings) -> bool:
                 """,
                 (LEDGER_V2_MARKER, datetime.now().isoformat(timespec="seconds")),
             )
-        _ensure_v2_columns(conn)
+        _migrate_v2_schema(conn)
         conn.commit()
     return backed_up

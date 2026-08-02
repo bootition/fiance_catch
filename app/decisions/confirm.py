@@ -39,6 +39,7 @@ HIGH_RISK_REASONS = frozenset(
 class GroupItem:
     review_id: int
     source_id: int
+    batch_id: int | None
     amount_cents: int
     occurred_at: str
     item_desc: str
@@ -82,7 +83,8 @@ def group_review_items(db_path) -> list[Group]:
               st.counterparty,
               st.occurred_at,
               st.amount_cents,
-              st.item_desc
+              st.item_desc,
+              st.batch_id
             FROM review_queue AS rq
             JOIN source_transactions AS st ON st.id = rq.source_transaction_id
             WHERE rq.status = 'pending' AND rq.reason IN ({placeholders})
@@ -97,6 +99,7 @@ def group_review_items(db_path) -> list[Group]:
             GroupItem(
                 review_id=int(row["review_id"]),
                 source_id=int(row["source_transaction_id"]),
+                batch_id=row["batch_id"],
                 amount_cents=int(row["amount_cents"]),
                 occurred_at=row["occurred_at"],
                 item_desc=row["item_desc"],
@@ -176,6 +179,27 @@ def confirm_group(
             ref_batch_id=group.items[0].source_id,
             detail=f"counterparty:{counterparty};type:{entry_type};category:{category}",
         )
+
+        affected_batches = {
+            item.batch_id for item in group.items if item.batch_id is not None
+        }
+        for batch_id in affected_batches:
+            real_pending = int(
+                conn.execute(
+                    """
+                    SELECT COUNT(*) AS c FROM review_queue
+                    WHERE status = 'pending'
+                      AND source_transaction_id IN (
+                        SELECT id FROM source_transactions WHERE batch_id = ?
+                      )
+                    """,
+                    (batch_id,),
+                ).fetchone()["c"]
+            )
+            conn.execute(
+                "UPDATE import_batches SET pending_count = ? WHERE id = ?",
+                (real_pending, batch_id),
+            )
 
         rule_id = None
         if len(group.items) >= 2:
