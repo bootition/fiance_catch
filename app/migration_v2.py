@@ -6,7 +6,7 @@ from .settings import Settings
 
 LEDGER_V2_MARKER = "ledger_v2_init_at"
 SCHEMA_VERSION_KEY = "schema_version"
-SCHEMA_VERSION = 3  # 3 = raw_type 列 + classification_rules 空模式 CHECK
+SCHEMA_VERSION = 4  # 3 = raw_type + 空规则 CHECK；4 = refund_links.refund_source_id 唯一
 
 
 def _connect(db_path: str | Path):
@@ -142,11 +142,10 @@ def init_new_schema(conn: sqlite3.Connection) -> None:
         """
         CREATE TABLE IF NOT EXISTS refund_links (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
-          refund_source_id INTEGER NOT NULL REFERENCES source_transactions(id) ON DELETE RESTRICT,
+          refund_source_id INTEGER NOT NULL UNIQUE REFERENCES source_transactions(id) ON DELETE RESTRICT,
           original_ledger_id INTEGER NOT NULL REFERENCES ledger_entries(id) ON DELETE RESTRICT,
           refund_amount_cents INTEGER NOT NULL CHECK(refund_amount_cents >= 0),
-          linked_at TEXT NOT NULL DEFAULT (datetime('now')),
-          UNIQUE(refund_source_id, original_ledger_id)
+          linked_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
         """
     )
@@ -316,15 +315,78 @@ def _current_schema_version(conn: sqlite3.Connection) -> int | None:
         return None
 
 
+def _refund_links_has_source_unique(conn: sqlite3.Connection) -> bool:
+    """检测 refund_links 是否有 refund_source_id 唯一约束（列级/表级均可）。"""
+    for index in conn.execute("PRAGMA index_list(refund_links)").fetchall():
+        if not int(index["unique"]):
+            continue
+        cols = conn.execute(
+            f"PRAGMA index_info({index['name']})"
+        ).fetchall()
+        if any(col["name"] == "refund_source_id" for col in cols):
+            return True
+    return False
+
+
+def _rebuild_refund_links(conn: sqlite3.Connection) -> int:
+    """重建 refund_links 使 refund_source_id 唯一；返回清理的多重链接数。
+
+    旧库（v3）允许同一退款来源关联多笔消费，属脏数据：
+    每源保留最早一条（id 最小），其余隔离（仅计数记录，不静默丢失）。
+    """
+    conn.execute("ALTER TABLE refund_links RENAME TO refund_links__legacy")
+    duplicates = int(
+        conn.execute(
+            """
+            SELECT COUNT(*) AS c FROM refund_links__legacy AS r
+            WHERE EXISTS (
+              SELECT 1 FROM refund_links__legacy AS other
+              WHERE other.refund_source_id = r.refund_source_id
+                AND other.id < r.id
+            )
+            """
+        ).fetchone()["c"]
+    )
+    conn.execute(
+        """
+        CREATE TABLE refund_links (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          refund_source_id INTEGER NOT NULL UNIQUE REFERENCES source_transactions(id) ON DELETE RESTRICT,
+          original_ledger_id INTEGER NOT NULL REFERENCES ledger_entries(id) ON DELETE RESTRICT,
+          refund_amount_cents INTEGER NOT NULL CHECK(refund_amount_cents >= 0),
+          linked_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO refund_links(
+          id, refund_source_id, original_ledger_id, refund_amount_cents, linked_at
+        )
+        SELECT
+          MIN(id), refund_source_id, original_ledger_id, refund_amount_cents, linked_at
+        FROM refund_links__legacy
+        GROUP BY refund_source_id
+        ORDER BY MIN(id) ASC
+        """
+    )
+    conn.execute("DROP TABLE refund_links__legacy")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_refund_links_original "
+        "ON refund_links(original_ledger_id)"
+    )
+    return duplicates
+
+
 def _migrate_v2_schema(conn: sqlite3.Connection) -> None:
     """把已初始化的 v2 库升级到当前 schema 版本（幂等，须在事务内调用）。
 
-    旧 v2 库（无版本号或版本 < SCHEMA_VERSION）：
-    1. source_transactions 补 raw_type 列
-    2. classification_rules 重建以加入空模式 CHECK
-    3. 写入 schema_version
+    旧 v2 库（无版本号或版本 < SCHEMA_VERSION）按版本阶梯升级：
+    v3：source_transactions 补 raw_type、classification_rules 空模式 CHECK
+    v4：refund_links.refund_source_id 唯一（清理多重链接脏数据）
     """
-    if _current_schema_version(conn) is not None and _current_schema_version(conn) >= SCHEMA_VERSION:
+    current = _current_schema_version(conn)
+    if current is not None and current >= SCHEMA_VERSION:
         return
     _ensure_v2_columns(conn)
     if not _classification_rules_has_blank_check(conn):
@@ -336,6 +398,16 @@ def _migrate_v2_schema(conn: sqlite3.Connection) -> None:
                 VALUES (?, ?)
                 """,
                 ("migration_dropped_blank_rules", str(dropped)),
+            )
+    if not _refund_links_has_source_unique(conn):
+        cleaned = _rebuild_refund_links(conn)
+        if cleaned > 0:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO schema_meta(key, value)
+                VALUES (?, ?)
+                """,
+                ("migration_cleaned_duplicate_refund_links", str(cleaned)),
             )
     conn.execute(
         """

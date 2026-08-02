@@ -11,6 +11,7 @@ from dataclasses import dataclass
 
 from ..db import connect
 from ..ledger_repo import _add_audit_event
+from .status import is_refund_status
 
 REASON_REFUND_PENDING = "refund_pending"
 
@@ -67,8 +68,13 @@ def link_refund_to_ledger(
 ) -> RefundLinkResult:
     """人工确认退款与原消费的关联（单事务，失败完整回滚）。
 
+    来源不变量（红队 P1 修复）：
+    - 来源流水必须是退款状态（支付宝“退款成功”/微信“已退款*”）
+    - 来源必须仍有 refund_pending 待确认项（已处理/非退款来源不可绕过）
+
     拒绝条件：
-    - 退款来源不存在或不是退款流水
+    - 退款来源不存在或不是退款流水，或没有待确认项
+    - 退款来源已关联过其他消费（同一笔退款不可重复冲减）
     - 原账本不存在或不是消费
     - 退款总额超过原消费金额（部分退款可多次关联，但不能超额）
     """
@@ -79,6 +85,25 @@ def link_refund_to_ledger(
         ).fetchone()
         if refund is None:
             raise ValueError(f"refund source not found: {refund_source_id}")
+        if not is_refund_status(refund["platform"], refund["status_text"]):
+            raise ValueError(
+                f"source is not a refund transaction: {refund['status_text']!r}"
+            )
+
+        existing_link = conn.execute(
+            "SELECT id FROM refund_links WHERE refund_source_id = ?",
+            (refund_source_id,),
+        ).fetchone()
+        if existing_link is not None:
+            raise ValueError(
+                f"refund source already linked: {refund_source_id}"
+            )
+
+        review = _find_pending_refund_review(conn, refund_source_id)
+        if review is None:
+            raise ValueError(
+                f"no pending refund review for source: {refund_source_id}"
+            )
 
         entry = conn.execute(
             "SELECT * FROM ledger_entries WHERE id = ?", (original_ledger_id,)
@@ -103,19 +128,17 @@ def link_refund_to_ledger(
                 f"({already} + {refund['amount_cents']} > {entry['amount_cents']})"
             )
 
-        review = _find_pending_refund_review(conn, refund_source_id)
-        review_id = int(review["id"]) if review is not None else None
-        if review is not None:
-            conn.execute(
-                """
-                UPDATE review_queue
-                SET status = 'resolved',
-                    resolved_ledger_id = ?,
-                    resolved_at = datetime('now')
-                WHERE id = ? AND status = 'pending'
-                """,
-                (original_ledger_id, review["id"]),
-            )
+        review_id = int(review["id"])
+        conn.execute(
+            """
+            UPDATE review_queue
+            SET status = 'resolved',
+                resolved_ledger_id = ?,
+                resolved_at = datetime('now')
+            WHERE id = ? AND status = 'pending'
+            """,
+            (original_ledger_id, review["id"]),
+        )
 
         cur = conn.execute(
             """

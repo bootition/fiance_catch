@@ -211,8 +211,8 @@ def test_link_refund_multiple_partial_links(db, tmp_path):
     assert r1.net_cost_cents == 3000
     r2 = link_refund_to_ledger(db, _source_id(db, "TXN-PA3"), ledger_id)
     assert r2.net_cost_cents == 0
-    with pytest.raises(ValueError, match="exceeds"):
-        link_refund_to_ledger(db, _source_id(db, "TXN-PA2"), ledger_id)  # 重复关联 20 会超
+    with pytest.raises(ValueError, match="already linked"):
+        link_refund_to_ledger(db, _source_id(db, "TXN-PA2"), ledger_id)  # 同一退款重复关联
     assert len(list_refund_links(db, original_ledger_id=ledger_id)) == 2
 
 

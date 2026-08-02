@@ -36,10 +36,10 @@ from .constants import (
 )
 from .rules import RULE_STATUS_ACTIVE, RULE_STATUS_OBSERVING, match_rules
 
+from ..refunds.status import is_refund_status
+
 ALIPAY_PERSON_TYPES = {"转账红包", "亲友代付", "红包"}
 WECHAT_PERSON_TYPES = {"转账", "微信红包"}
-ALIPAY_REFUND_STATUS = "退款成功"
-WECHAT_REFUND_PREFIXES = ("已全额退款", "已退款")
 
 PRIORITY_REFUND = 5
 PRIORITY_WITHDRAWAL = 5
@@ -61,9 +61,7 @@ class ProcessResult:
 
 
 def _is_refund(source) -> bool:
-    if source["platform"] == "alipay":
-        return source["status_text"] == ALIPAY_REFUND_STATUS
-    return source["status_text"].startswith(WECHAT_REFUND_PREFIXES)
+    return is_refund_status(source["platform"], source["status_text"])
 
 
 def _is_withdrawal(source) -> bool:

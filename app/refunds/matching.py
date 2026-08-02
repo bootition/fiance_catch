@@ -95,6 +95,8 @@ def find_refund_candidates(db_path, refund_source_id: int) -> list[RefundCandida
             source_txn = source["source_txn_id"] if source is not None else ""
 
             already = _refunded_cents_by_ledger(conn, row["id"])
+            if already >= int(row["amount_cents"]):
+                continue  # 已全额退款，无可退余额，不再列为候选
             score, reason = _score(
                 refund_amount=refund_amount,
                 entry_amount=int(row["amount_cents"]),
