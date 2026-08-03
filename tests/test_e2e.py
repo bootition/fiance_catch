@@ -458,3 +458,49 @@ def test_delete_refund_linked_via_http_no_500(client):
     response = c.post(f"/transactions/{refunded_entry['id']}/delete", follow_redirects=False)
     assert response.status_code in (200, 303)
     assert list_ledger_entries(settings.db_path)  # 记录仍在
+
+
+# ── 红队 16：损坏微信 XLSX 上传不返回 500、无批次残留、临时文件清理 ──
+
+
+def test_import_corrupt_wechat_xlsx_nonzip_no_500_no_residue(client):
+    """P2：损坏微信 XLSX（非 ZIP 字节）→ 错误页而非 500；无批次残留；临时文件清理。"""
+    c, settings = client
+    from app.stats import list_batches
+
+    before = len(list_batches(settings.db_path))
+    response = c.post(
+        "/imports/new",
+        data={"platform": "wechat"},
+        files={"file": ("bad.xlsx", b"this is not a zip archive", "application/octet-stream")},
+    )
+    assert response.status_code == 200
+    assert "微信账单文件损坏" in response.text
+    assert len(list_batches(settings.db_path)) == before  # 无批次残留
+    leftover = [p.name for p in settings.data_dir.iterdir() if p.name != "t.sqlite"]
+    assert leftover == []  # 上传临时文件已清理
+
+
+def test_import_corrupt_wechat_xlsx_bad_xml_no_500_no_residue(client):
+    """P2：ZIP 内 XML 损坏（伪造工作簿）→ 错误页而非 500；无批次残留。"""
+    c, settings = client
+    import zipfile
+
+    from app.stats import list_batches
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("workbook.xml", "<broken-")
+    payload = buf.getvalue()
+
+    before = len(list_batches(settings.db_path))
+    response = c.post(
+        "/imports/new",
+        data={"platform": "wechat"},
+        files={"file": ("fake.xlsx", payload, "application/octet-stream")},
+    )
+    assert response.status_code == 200
+    assert "微信账单文件损坏" in response.text
+    assert len(list_batches(settings.db_path)) == before  # 无批次残留
+    leftover = [p.name for p in settings.data_dir.iterdir() if p.name != "t.sqlite"]
+    assert leftover == []  # 上传临时文件已清理

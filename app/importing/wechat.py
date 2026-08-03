@@ -1,7 +1,11 @@
 import hashlib
+import io
+import zipfile
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import openpyxl
+from openpyxl.utils.exceptions import InvalidFileException
 
 from .model import NormalizedTransaction, Platform, RowStatus, amount_to_cents, normalize_note
 
@@ -74,8 +78,23 @@ def parse_wechat_xlsx(path: str | Path) -> list[NormalizedTransaction]:
     """解析微信支付账单 XLSX，返回标准化行。
 
     前部为导出信息，表头行首个单元格为“交易时间”。
+    损坏/不完整/伪造的 .xlsx（非 ZIP 字节、ZIP 内 XML 损坏、
+    缺少 OOXML 必需部件、openpyxl 无法识别的工作簿）统一转换为
+    ValueError，供导入路由渲染错误页，而不是暴露 HTTP 500。
     """
-    workbook = openpyxl.load_workbook(str(path), read_only=True, data_only=True)
+    try:
+        return _parse_wechat_xlsx_workbook(path)
+    except (zipfile.BadZipFile, InvalidFileException, ET.ParseError, KeyError) as exc:
+        raise ValueError(f"微信账单文件损坏或无法解析：{exc}") from exc
+
+
+def _parse_wechat_xlsx_workbook(path: str | Path) -> list[NormalizedTransaction]:
+    # 从内存字节解析：openpyxl 解析失败时不会关闭其内部 ZipFile，
+    # 直接读磁盘文件会在 Windows 上锁住临时文件，导致调用方无法清理；
+    # 用 BytesIO 解析则磁盘临时文件从未被持有。
+    workbook = openpyxl.load_workbook(
+        io.BytesIO(Path(path).read_bytes()), read_only=True, data_only=True
+    )
     try:
         sheet = workbook[workbook.sheetnames[0]]
         rows = sheet.iter_rows(values_only=True)

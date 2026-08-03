@@ -73,7 +73,10 @@ async def imports_upload(
         }
         return templates.TemplateResponse(request, "imports_new.html", context)
     finally:
-        tmp_path.unlink(missing_ok=True)
+        try:
+            tmp_path.unlink(missing_ok=True)
+        except OSError:
+            pass
 
     context = {
         "request": request,
