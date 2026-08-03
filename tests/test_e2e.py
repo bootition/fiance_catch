@@ -835,3 +835,52 @@ def test_e2e_entry_detail_and_edit_via_http(client):
     edited = get_ledger_entry(settings.db_path, entry["id"])
     assert int(edited["amount_cents"]) == 2500
     assert edited["category"] == "改后分类"
+
+
+# ── 阶段 7 复审：自动规则入账在流水详情中可追溯（规格 §3.4）──
+
+
+def test_e2e_rule_applied_audit_traceable_via_http(client):
+    """创建并提升自动规则 → 上传命中交易 → 详情页展示规则命中证据（规则ID/匹配依据）。"""
+    c, settings = client
+    # 创建并提升自动规则（滴滴 → 出行交通）
+    created = c.post(
+        "/rules",
+        data={
+            "match_field": "counterparty",
+            "match_pattern": "滴滴出行",
+            "target_type": TYPE_CONSUMPTION,
+            "target_category": CATEGORY_TRANSPORT,
+        },
+    )
+    assert created.status_code == 200
+    assert c.post("/rules/1/promote").status_code == 200
+
+    _upload(c, ALIPAY_SAMPLE, "alipay")
+
+    # 自动入账的滴滴记录
+    entry = next(
+        e for e in list_ledger_entries(settings.db_path)
+        if int(e["amount_cents"]) == 2000
+    )
+    # 审计事件关联该账本记录（可按账本追溯）
+    events = [
+        e for e in list_audit_events(settings.db_path)
+        if e["event_type"] == "rule_applied"
+    ]
+    assert len(events) == 1
+    assert events[0]["ref_ledger_id"] == entry["id"]
+    assert events[0]["ref_rule_id"] == 1
+    assert "field:counterparty" in events[0]["detail"]
+    assert "pattern:滴滴出行" in events[0]["detail"]
+
+    # 详情页展示规则命中证据
+    detail = c.get(f"/transactions/{entry['id']}")
+    assert detail.status_code == 200
+    assert "规则自动入账" in detail.text
+    assert "滴滴出行" in detail.text  # 匹配依据
+    assert "1" in detail.text or "rule" in detail.text  # 规则 ID 可见
+
+    # 同一事件仍可按规则追溯（规则页命中历史依赖 ref_rule_id）
+    by_rule = [e for e in events if e["ref_rule_id"] == 1]
+    assert by_rule and by_rule[0]["ref_ledger_id"] == entry["id"]

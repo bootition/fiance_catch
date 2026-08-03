@@ -142,7 +142,7 @@ def process_source(conn, source) -> str:
 
     rule = match_rules(conn, source["counterparty"], source["item_desc"])
     if rule is not None and rule["status"] == RULE_STATUS_ACTIVE:
-        _create_ledger_entry(
+        entry_id = _create_ledger_entry(
             conn,
             entry_type=rule["target_type"],
             amount_cents=source["amount_cents"],
@@ -156,9 +156,13 @@ def process_source(conn, source) -> str:
         _add_audit_event(
             conn,
             event_type="rule_applied",
+            ref_ledger_id=entry_id,
             ref_rule_id=rule["id"],
             ref_batch_id=source["batch_id"],
-            detail=f"source:{source['id']}",
+            detail=(
+                f"source:{source['id']};field:{rule['match_field']};"
+                f"pattern:{rule['match_pattern']}"
+            ),
         )
         return ACTION_POSTED
     if rule is not None and rule["status"] == RULE_STATUS_OBSERVING:
