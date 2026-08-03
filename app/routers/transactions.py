@@ -1,7 +1,7 @@
 from datetime import date
 from urllib.parse import quote
 
-from fastapi import APIRouter, Form, Request
+from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from ..db import connect
@@ -13,6 +13,7 @@ from ..ledger_repo import (
 from ..router_support.settings_access import current_settings
 from ..stats import list_categories_used, list_entries_filtered
 from ..templates_core import templates
+from ..validation import validate_iso_date
 
 router = APIRouter(tags=["Transactions"])
 
@@ -110,6 +111,8 @@ def transactions_create(
     note: str = Form(""),
 ):
     settings = current_settings()
+    # 写前校验（P1 红队修复）：非法日期绝不落库
+    txn_date = validate_iso_date(txn_date, field_name="txn_date")
     try:
         from ..logic import parse_amount_to_cents
 
@@ -160,6 +163,7 @@ def transactions_edit(
     note: str = Form(""),
 ):
     settings = current_settings()
+    txn_date = validate_iso_date(txn_date, field_name="txn_date")
     try:
         from ..logic import parse_amount_to_cents
 

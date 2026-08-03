@@ -1,3 +1,5 @@
+import sqlite3
+
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse
 
@@ -77,6 +79,10 @@ def rules_create(
     target_category: str = Form(""),
 ):
     settings = current_settings()
+    if match_field not in ("counterparty", "item_desc"):
+        return _render(settings, request, "创建失败：无效匹配字段")
+    if target_type not in TYPE_LABELS:
+        return _render(settings, request, "创建失败：无效目标类型")
     try:
         rule_id = create_classification_rule(
             settings.db_path,
@@ -88,6 +94,8 @@ def rules_create(
         flash = f"已创建观察期规则 #{rule_id}（先预填待确认，验证后可提升为自动入账）"
     except ValueError as exc:
         flash = f"创建失败：{exc}"
+    except sqlite3.IntegrityError:
+        flash = "创建失败：规则数据不合法"
     return _render(settings, request, flash)
 
 

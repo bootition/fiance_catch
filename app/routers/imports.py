@@ -40,6 +40,14 @@ async def imports_upload(
     file: UploadFile | None = None,
 ):
     settings = current_settings()
+    if platform not in ("alipay", "wechat"):
+        context = {
+            "request": request,
+            "active_page": "imports_new",
+            "pending_count": _pending_count(),
+            "last_result": {"error": "无效平台"},
+        }
+        return templates.TemplateResponse(request, "imports_new.html", context)
     if file is None or not file.filename:
         return RedirectResponse("/imports/new?error=未选择文件", status_code=303)
 
@@ -56,6 +64,14 @@ async def imports_upload(
     try:
         result = import_file(settings.db_path, tmp_path, platform)
         processed = process_batch(settings.db_path, result.batch_id)
+    except (ValueError, FileNotFoundError) as exc:
+        context = {
+            "request": request,
+            "active_page": "imports_new",
+            "pending_count": _pending_count(),
+            "last_result": {"error": str(exc)},
+        }
+        return templates.TemplateResponse(request, "imports_new.html", context)
     finally:
         tmp_path.unlink(missing_ok=True)
 

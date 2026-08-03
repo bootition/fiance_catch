@@ -344,3 +344,117 @@ def test_e2e_full_pipeline(client):
     # 待确认：提现、人际、无原消费退款（剩余高风险）
     remaining = [r["reason"] for r in list_review_queue(settings.db_path)]
     assert set(remaining) <= {"withdrawal", "person_transfer", "refund_pending"}
+
+
+# ── 红队 15：页面级无效输入不写库、不 500（规格 §8） ──
+
+
+def test_e2e_manual_entry_invalid_date_no_persist_no_500(client):
+    """P1：非法日期补账不落库、不返回 500。"""
+    c, settings = client
+    before = len(list_ledger_entries(settings.db_path))
+    response = c.post(
+        "/transactions",
+        data={"entry_type": "consumption", "amount": "12.34", "category": "x", "txn_date": "garbage", "note": ""},
+    )
+    assert response.status_code in (200, 400)
+    assert len(list_ledger_entries(settings.db_path)) == before  # 未写入
+    stats = overview_stats(settings.db_path, "2026-07")
+    assert stats["total_consumption_cents"] == 0  # 无坏数据
+    assert "YYYY-MM-DD" in response.text or "must be" in response.text
+
+
+def test_manual_invalid_date_rejected_at_invalid_calendar_date(client):
+    """非法日历日期（如 2 月 30 日）同样不落库。"""
+    c, settings = client
+    before = len(list_ledger_entries(settings.db_path))
+    response = c.post(
+        "/transactions",
+        data={"entry_type": "income", "amount": "1.00", "category": "", "txn_date": "2026-02-30", "note": ""},
+    )
+    assert response.status_code in (200, 400)
+    assert len(list_ledger_entries(settings.db_path)) == before
+
+
+def test_manual_invalid_entry_type_not_persisted(client):
+    c, settings = client
+    before = len(list_ledger_entries(settings.db_path))
+    response = c.post(
+        "/transactions",
+        data={"entry_type": "steal", "amount": "1.00", "category": "", "txn_date": "2026-07-01", "note": ""},
+    )
+    assert response.status_code == 200
+    assert "补记失败" in response.text
+    assert len(list_ledger_entries(settings.db_path)) == before
+
+
+def test_manual_invalid_amount_not_persisted(client):
+    c, settings = client
+    before = len(list_ledger_entries(settings.db_path))
+    response = c.post(
+        "/transactions",
+        data={"entry_type": "consumption", "amount": "abc", "category": "", "txn_date": "2026-07-01", "note": ""},
+    )
+    assert response.status_code == 200
+    assert "补记失败" in response.text
+    assert len(list_ledger_entries(settings.db_path)) == before
+
+
+def test_import_invalid_platform_no_500(client):
+    """P2：非法平台导入不返回 500。"""
+    c, _ = client
+    response = c.post(
+        "/imports/new",
+        data={"platform": "evil"},
+        files={"file": ("x.csv", b"not-a-real-bill", "text/csv")},
+    )
+    assert response.status_code == 200
+    assert "无效平台" in response.text
+
+
+def test_rule_invalid_field_no_500(client):
+    """P2：非法规则字段不返回 500。"""
+    c, _ = client
+    response = c.post(
+        "/rules",
+        data={"match_field": "evil", "match_pattern": "x", "target_type": "consumption", "target_category": ""},
+    )
+    assert response.status_code == 200
+    assert "无效匹配字段" in response.text
+
+
+def test_rule_invalid_type_no_500(client):
+    c, _ = client
+    response = c.post(
+        "/rules",
+        data={"match_field": "counterparty", "match_pattern": "x", "target_type": "hack", "target_category": ""},
+    )
+    assert response.status_code == 200
+    assert "无效目标类型" in response.text
+
+
+def test_delete_refund_linked_via_http_no_500(client):
+    """已退款消费删除经 HTTP → 正常提示非 500，数据保留。"""
+    c, settings = client
+    rows = [
+        "2026-07-10 10:00:00,日用百货,某店,/,消费,支出,50.00,余额宝,交易成功,TXN-HT-1,,",
+        "2026-07-11 10:00:00,日用百货,某店,/,退款-消费,不计收支,50.00,余额宝,退款成功,TXN-HT-1_RM1,,",
+    ]
+    path = settings.data_dir / "del.csv"
+    path.write_bytes(
+        ("\n".join(["----导出----", "交易时间,交易分类,交易对方,对方账号,商品说明,收/支,金额,收/付款方式,交易状态,交易订单号,商家订单号,备注"] + rows)).encode("gb18030")
+    )
+    from app.importing.service import import_file
+    from app.decisions.engine import process_batch
+
+    r = import_file(settings.db_path, path, "alipay")
+    process_batch(settings.db_path, r.batch_id)
+    _confirm_groups(settings)
+    sources = _source_ids(settings)
+    ledger = _ledger_by_source(settings)
+    link_refund_to_ledger(settings.db_path, sources["TXN-HT-1_RM1"], ledger["TXN-HT-1"])
+    refunded_entry = next(e for e in list_ledger_entries(settings.db_path) if int(e["amount_cents"]) == 5000)
+
+    response = c.post(f"/transactions/{refunded_entry['id']}/delete", follow_redirects=False)
+    assert response.status_code in (200, 303)
+    assert list_ledger_entries(settings.db_path)  # 记录仍在
