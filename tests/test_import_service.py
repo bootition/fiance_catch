@@ -342,3 +342,52 @@ def test_import_wechat_valid_leap_day_ok(db, tmp_path):
     assert result.added == 1
     source = list_source_transactions(db, platform="wechat")[0]
     assert source["occurred_at"] == "2024-02-29 08:30:00"
+
+
+# ── 红队 18：空交易时间行不得静默丢弃（规格 §5/§7.2）──
+
+
+def test_import_alipay_empty_date_row_raises(db, tmp_path):
+    """首列为空但其余字段有效的数据行 → ValueError，整批回滚无残留。"""
+    path = _alipay_file(
+        tmp_path,
+        name="empty-date.csv",
+        rows=[
+            ",日用百货,某店,/,消费,支出,10.00,余额宝,交易成功,EMPTY-DATE-1,,",
+        ],
+    )
+    with pytest.raises(ValueError):
+        import_file(db, path, "alipay")
+    assert list_import_batches(db) == []
+    assert list_source_transactions(db, platform="alipay") == []
+
+
+def test_import_alipay_blank_lines_still_skipped(db, tmp_path):
+    """完全空白的 CSV 行仍被跳过（非数据行）。"""
+    path = _alipay_file(
+        tmp_path,
+        name="blank-lines.csv",
+        rows=[
+            "",
+            "2026-07-31 19:21:36,日用百货,某店,/,消费,支出,10.00,余额宝,交易成功,BLANK-OK-1,,",
+            "  ",
+        ],
+    )
+    result = import_file(db, path, "alipay")
+    assert result.added == 1
+    assert result.total == 1
+
+
+def test_import_wechat_empty_date_row_raises(db, tmp_path):
+    """首格为空但其余字段有效的数据行 → ValueError，整批回滚无残留。"""
+    path = _wechat_file(
+        tmp_path,
+        "empty-date.xlsx",
+        [
+            [None, "商户消费", "某店", "x", "支出", 10, "零钱通", "支付成功", "WX-EMPTY-1", "M1", "/"],
+        ],
+    )
+    with pytest.raises(ValueError):
+        import_file(db, path, "wechat")
+    assert list_import_batches(db) == []
+    assert list_source_transactions(db, platform="wechat") == []

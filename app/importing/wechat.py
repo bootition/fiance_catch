@@ -115,7 +115,9 @@ def _parse_wechat_xlsx_workbook(path: str | Path) -> list[NormalizedTransaction]
 
     normalized: list[NormalizedTransaction] = []
     for row in data_rows:
-        if not row or row[0] is None:
+        if not row or not any(
+            cell is not None and str(cell).strip() for cell in row
+        ):
             continue
         cells = _align_cells(row)
         normalized.append(_normalize_row(cells))

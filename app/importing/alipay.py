@@ -80,7 +80,7 @@ def parse_alipay_csv_bytes(data: bytes) -> list[NormalizedTransaction]:
     rows: list[list[str]] = []
     header_idx = -1
     for raw_row in reader:
-        if not raw_row or not raw_row[0].strip():
+        if not raw_row or not any(cell.strip() for cell in raw_row):
             continue
         if raw_row[0].strip() == "交易时间":
             header_idx = len(rows)
