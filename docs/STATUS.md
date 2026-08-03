@@ -17,15 +17,16 @@
 | 重构阶段 3 | ✅ 最终红队复审通过：旧 v2 空规则可安全隔离，保留有效规则并升级至 v3；高风险待办隔离、空规则防御、批次计数同步和已有库升级均已验证 | `docs/reports/08_phase3_final_red_team_review_2026-08-01.md` |
 | 重构阶段 4 | ✅ 最终红队复审通过：退款写入已收敛至受约束服务；普通来源无法伪造退款，来源一对一、候选余额与跨期净额规则均已验证 | `docs/reports/11_phase4_final_red_team_review_2026-08-01.md` |
 | 重构阶段 5 | ✅ 最终红队复审通过：页面和仓储层均安全处理已退款记录删除；规则观察期、退款统计聚合和编辑约束均已验证 | `docs/reports/14_phase5_final_red_team_review_2026-08-01.md` |
-| 重构阶段 6 | ✅ 修复完成：损坏微信 XLSX 解析异常已转换为 ValueError（BadZipFile/InvalidFileException/ParseError/KeyError）；上传返回错误页而非 500；无批次残留；临时文件清理已加固 | `docs/decisions/01_refactor_spec.md` §7.6/§8、`docs/reports/16_phase6_fix_red_team_review_2026-08-01.md` + 本会话修复 |
+| 重构阶段 6 | 🔄 二次红队复审未通过：损坏微信文件已安全处理，但结构合法且交易时间非法的账单仍会写入坏来源流水 | `docs/reports/17_phase6_second_red_team_review_2026-08-01.md` |
 | 当前产品面 | ✅ 全新 v2 页面已上线（旧路由已下线）；维护页与 status 路由已移除 | `app/main.py`、`templates/base.html` |
-| 测试基线 | ✅ 直接 `pytest` 238 项通过（新增页面级端到端 2 项：损坏微信 XLSX 非 ZIP 字节、ZIP 内 XML 损坏，均验证不返回 500、无批次残留、临时文件清理） | `tests/test_e2e.py` |
+| 测试基线 | ⚠️ 直接 `pytest` 238 项通过，但未覆盖账单行无效日期/时间的解析与无残留要求 | `docs/reports/17_phase6_second_red_team_review_2026-08-01.md` |
 
 （✅=已通过 🔄=进行中 ⏳=待执行）
 
 ## 已知剩余缺口（诚实披露）
 
-1. 重构规格中的待定项：in-memory 批量删除令牌是否替换（见 `decisions/03` 跟进候选）。
+1. 重构阶段 6 当前阻塞：结构合法但交易时间非法的账单可写入坏来源流水，后续会污染账本日期和统计。详见 `reports/17_phase6_second_red_team_review_2026-08-01.md`。
+2. 重构规格中的待定项：in-memory 批量删除令牌是否替换（见 `decisions/03` 跟进候选）。
 2. **正式库已完成重置**（2026-08-01 15:00，备份 `ledger.sqlite-20260801-150000.bak`、`ledger.sqlite-20260801-150040.bak`）；schema 已升级至 version 4（raw_type + 规则 CHECK + refund 唯一约束已验证）；待用户从新页面重新导入账单。
 3. 若未来需要逐条追溯阶段 2 遗留空规则的隔离来源，可记录规则 ID/字段/原因；当前仅持久化隔离数量，不阻塞阶段 3。
 4. 若未来需要逐条追溯 v4 迁移清理的多重退款关联，可记录退款来源、保留与隔离关联的 ID；当前仅持久化清理数量，不阻塞阶段 4。
@@ -33,7 +34,7 @@
 
 ## 进行中的工作
 
-- 账单驱动重构：阶段 6 红队复审修复已完成（损坏微信 XLSX 解析异常转换 + 页面级端到端测试）；全部六阶段实施完成，待最终红队复审交付验收
+- 账单驱动重构：阶段 6 待验证账单行日期/时间；修复并最终红队复审通过后才可进入阶段七/交付验收
 
 ## 当前有效文档（Current Truth）
 
