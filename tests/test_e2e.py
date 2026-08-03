@@ -481,6 +481,65 @@ def test_import_corrupt_wechat_xlsx_nonzip_no_500_no_residue(client):
     assert leftover == []  # 上传临时文件已清理
 
 
+# ── 红队 17：账单行交易时间校验的页面级端到端 ──
+
+
+def test_import_bad_alipay_date_via_http_no_residue(client):
+    """P1：结构合法但交易时间非法的支付宝 CSV → 错误页而非 500；无批次/无来源残留。"""
+    c, settings = client
+    import openpyxl
+
+    from app.stats import list_batches
+
+    csv = (
+        "----------------导出信息----------------\n"
+        "交易时间,交易分类,交易对方,对方账号,商品说明,收/支,金额,收/付款方式,交易状态,交易订单号,商家订单号,备注\n"
+        "not-a-date,日用百货,某店,/,消费,支出,10.00,余额宝,交易成功,BAD-DATE-1,,"
+    ).encode("gb18030")
+
+    before_batches = len(list_batches(settings.db_path))
+    response = c.post(
+        "/imports/new",
+        data={"platform": "alipay"},
+        files={"file": ("bad-date.csv", csv, "text/csv")},
+    )
+    assert response.status_code == 200
+    assert "invalid occurred_at" in response.text
+    assert len(list_batches(settings.db_path)) == before_batches  # 无批次残留
+    assert list_source_transactions(settings.db_path, platform="alipay") == []  # 无来源残留
+
+
+def test_import_bad_wechat_date_via_http_no_residue(client):
+    """P1：交易时间非法的微信 XLSX → 错误页而非 500；无批次/无来源残留。"""
+    c, settings = client
+    import openpyxl
+
+    from app.stats import list_batches
+
+    buf = io.BytesIO()
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(
+        [
+            "交易时间", "交易类型", "交易对方", "商品", "收/支", "金额(元)",
+            "支付方式", "当前状态", "交易单号", "商户单号", "备注",
+        ]
+    )
+    ws.append(["not-a-date", "商户消费", "某店", "x", "支出", 10, "零钱通", "支付成功", "WX-BAD-1", "M1", "/"])
+    wb.save(buf)
+
+    before_batches = len(list_batches(settings.db_path))
+    response = c.post(
+        "/imports/new",
+        data={"platform": "wechat"},
+        files={"file": ("bad-date.xlsx", buf.getvalue(), "application/octet-stream")},
+    )
+    assert response.status_code == 200
+    assert "invalid occurred_at" in response.text
+    assert len(list_batches(settings.db_path)) == before_batches  # 无批次残留
+    assert list_source_transactions(settings.db_path, platform="wechat") == []  # 无来源残留
+
+
 def test_import_corrupt_wechat_xlsx_bad_xml_no_500_no_residue(client):
     """P2：ZIP 内 XML 损坏（伪造工作簿）→ 错误页而非 500；无批次残留。"""
     c, settings = client

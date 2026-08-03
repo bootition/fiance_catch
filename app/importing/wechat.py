@@ -7,7 +7,7 @@ from pathlib import Path
 import openpyxl
 from openpyxl.utils.exceptions import InvalidFileException
 
-from .model import NormalizedTransaction, Platform, RowStatus, amount_to_cents, normalize_note
+from .model import NormalizedTransaction, Platform, RowStatus, amount_to_cents, normalize_note, normalize_occurred_at
 
 WECHAT_SUCCESS = {
     "支付成功",
@@ -118,8 +118,6 @@ def _parse_wechat_xlsx_workbook(path: str | Path) -> list[NormalizedTransaction]
         if not row or row[0] is None:
             continue
         cells = _align_cells(row)
-        if not str(cells[COL_TIME]).strip():
-            continue
         normalized.append(_normalize_row(cells))
     return normalized
 
@@ -132,7 +130,7 @@ def _align_cells(row: list) -> list:
 
 
 def _normalize_row(cells: list) -> NormalizedTransaction:
-    occurred_at = str(cells[COL_TIME]).strip()
+    occurred_at = normalize_occurred_at(cells[COL_TIME])
     raw_type = str(cells[COL_TXN_TYPE] or "").strip()
     counterparty = str(cells[COL_COUNTERPARTY] or "").strip()
     item_desc = str(cells[COL_ITEM] or "").strip()

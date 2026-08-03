@@ -1,6 +1,34 @@
+import re
 import sqlite3
+from datetime import date as dt_date
+from datetime import datetime as dt_datetime
 
 from .db import connect
+
+_ISO_DATETIME_RE = re.compile(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$")
+_ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _validate_occurred_at(value: str) -> str:
+    """校验来源流水时间必须为 YYYY-MM-DD HH:MM:SS（含真实日历日）。"""
+    if not _ISO_DATETIME_RE.fullmatch(value):
+        raise ValueError(f"invalid occurred_at: {value!r}")
+    try:
+        dt_datetime.fromisoformat(value)
+    except ValueError as exc:
+        raise ValueError(f"invalid occurred_at: {value!r}") from exc
+    return value
+
+
+def _validate_txn_date(value: str) -> str:
+    """校验账本日期必须为 YYYY-MM-DD（含真实日历日）。"""
+    if not _ISO_DATE_RE.fullmatch(value):
+        raise ValueError(f"invalid txn_date: {value!r}")
+    try:
+        dt_date.fromisoformat(value)
+    except ValueError as exc:
+        raise ValueError(f"invalid txn_date: {value!r}") from exc
+    return value
 
 BATCH_STATUS_ACTIVE = "active"
 BATCH_STATUS_REVOKED = "revoked"
@@ -185,6 +213,7 @@ def _insert_source_transaction(
     batch_id: int | None = None,
     normalized_hash: str,
 ) -> tuple[int, bool]:
+    occurred_at = _validate_occurred_at(occurred_at)
     existing = conn.execute(
         """
         SELECT id FROM source_transactions
@@ -307,6 +336,7 @@ def _create_ledger_entry(
     batch_id: int | None = None,
     note: str = "",
 ) -> int:
+    txn_date = _validate_txn_date(txn_date)
     cur = conn.execute(
         """
         INSERT INTO ledger_entries(
@@ -372,6 +402,7 @@ def update_ledger_entry(
     - 已关联退款的记录：entry_type 不可改变（防破坏退款关联语义）
     - 消费记录：新金额不得小于已关联退款总额（防负净额）
     """
+    txn_date = _validate_txn_date(txn_date)
     with connect(db_path) as conn:
         entry = conn.execute(
             "SELECT * FROM ledger_entries WHERE id = ?", (entry_id,)

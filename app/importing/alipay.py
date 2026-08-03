@@ -2,7 +2,7 @@ import hashlib
 import io
 import csv
 
-from .model import NormalizedTransaction, Platform, RowStatus, amount_to_cents, normalize_note
+from .model import NormalizedTransaction, Platform, RowStatus, amount_to_cents, normalize_note, normalize_occurred_at
 
 ALIPAY_SUCCESS = {
     "交易成功",
@@ -92,8 +92,6 @@ def parse_alipay_csv_bytes(data: bytes) -> list[NormalizedTransaction]:
     normalized: list[NormalizedTransaction] = []
     for raw in rows[header_idx + 1 :]:
         cells = _align_cells(raw)
-        if not cells[COL_TIME]:
-            continue
         normalized.append(_normalize_row(cells))
     return normalized
 
@@ -119,7 +117,7 @@ def _align_cells(raw: list[str]) -> list[str]:
 
 
 def _normalize_row(cells: list[str]) -> NormalizedTransaction:
-    occurred_at = cells[COL_TIME]
+    occurred_at = normalize_occurred_at(cells[COL_TIME])
     raw_type = cells[COL_CATEGORY]
     counterparty = cells[COL_COUNTERPARTY]
     item_desc = cells[COL_ITEM]

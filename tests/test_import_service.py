@@ -209,3 +209,136 @@ def test_import_zero_amount_success_row_preserved(db, tmp_path):
     sources = list_source_transactions(db, platform="alipay")
     zero = next(s for s in sources if s["source_txn_id"] == "TXN-ZERO-1")
     assert int(zero["amount_cents"]) == 0
+
+
+# ── 红队 17：账单行交易时间校验（规格 §5/§7.2）──
+
+
+def test_import_alipay_invalid_date_raises_no_residue(db, tmp_path):
+    """交易时间为非日期字符串 → ValueError；原子导入无批次、无来源残留。"""
+    path = _alipay_file(
+        tmp_path,
+        name="bad-date.csv",
+        rows=[
+            "not-a-date,日用百货,某店,/,消费,支出,10.00,余额宝,交易成功,BAD-DATE-1,,",
+        ],
+    )
+    with pytest.raises(ValueError):
+        import_file(db, path, "alipay")
+    assert list_import_batches(db) == []
+    assert list_source_transactions(db, platform="alipay") == []
+
+
+def test_import_alipay_invalid_calendar_date_raises(db, tmp_path):
+    """不存在的日历日期（2026-02-30）→ ValueError。"""
+    path = _alipay_file(
+        tmp_path,
+        name="bad-cal.csv",
+        rows=[
+            "2026-02-30 12:00:00,日用百货,某店,/,消费,支出,10.00,余额宝,交易成功,BAD-CAL-1,,",
+        ],
+    )
+    with pytest.raises(ValueError):
+        import_file(db, path, "alipay")
+    assert list_import_batches(db) == []
+
+
+def test_import_alipay_invalid_time_raises(db, tmp_path):
+    """非法时间（25:61）→ ValueError。"""
+    path = _alipay_file(
+        tmp_path,
+        name="bad-time.csv",
+        rows=[
+            "2026-07-01 25:61:00,日用百货,某店,/,消费,支出,10.00,余额宝,交易成功,BAD-TIME-1,,",
+        ],
+    )
+    with pytest.raises(ValueError):
+        import_file(db, path, "alipay")
+    assert list_import_batches(db) == []
+
+
+def test_import_alipay_valid_leap_day_ok(db, tmp_path):
+    """合法闰日（2024-02-29）正常导入并规范化。"""
+    path = _alipay_file(
+        tmp_path,
+        name="leap.csv",
+        rows=[
+            "2024-02-29 12:00:00,餐饮美食,某店,/,消费,支出,5.00,余额宝,交易成功,LEAP-1,,",
+        ],
+    )
+    result = import_file(db, path, "alipay")
+    assert result.added == 1
+    source = list_source_transactions(db, platform="alipay")[0]
+    assert source["occurred_at"] == "2024-02-29 12:00:00"
+
+
+def _wechat_file(tmp_path, name, rows):
+    path = tmp_path / name
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(
+        [
+            "交易时间", "交易类型", "交易对方", "商品", "收/支", "金额(元)",
+            "支付方式", "当前状态", "交易单号", "商户单号", "备注",
+        ]
+    )
+    for row in rows:
+        ws.append(row)
+    wb.save(path)
+    return path
+
+
+def test_import_wechat_invalid_date_raises(db, tmp_path):
+    """微信 XLSX 交易时间字符串非法 → ValueError；无批次、无来源残留。"""
+    path = _wechat_file(
+        tmp_path,
+        "bad-date.xlsx",
+        [
+            ["not-a-date", "商户消费", "某店", "x", "支出", 10, "零钱通", "支付成功", "WX-BAD-1", "M1", "/"],
+        ],
+    )
+    with pytest.raises(ValueError):
+        import_file(db, path, "wechat")
+    assert list_import_batches(db) == []
+    assert list_source_transactions(db, platform="wechat") == []
+
+
+def test_import_wechat_invalid_calendar_date_raises(db, tmp_path):
+    path = _wechat_file(
+        tmp_path,
+        "bad-cal.xlsx",
+        [
+            ["2026-02-30 12:00:00", "商户消费", "某店", "x", "支出", 10, "零钱通", "支付成功", "WX-BAD-2", "M2", "/"],
+        ],
+    )
+    with pytest.raises(ValueError):
+        import_file(db, path, "wechat")
+    assert list_import_batches(db) == []
+
+
+def test_import_wechat_invalid_time_raises(db, tmp_path):
+    path = _wechat_file(
+        tmp_path,
+        "bad-time.xlsx",
+        [
+            ["2026-07-01 25:61:00", "商户消费", "某店", "x", "支出", 10, "零钱通", "支付成功", "WX-BAD-3", "M3", "/"],
+        ],
+    )
+    with pytest.raises(ValueError):
+        import_file(db, path, "wechat")
+    assert list_import_batches(db) == []
+
+
+def test_import_wechat_valid_leap_day_ok(db, tmp_path):
+    """微信 datetime 单元格合法闰日正常导入并规范化为 YYYY-MM-DD HH:MM:SS。"""
+    path = _wechat_file(
+        tmp_path,
+        "leap.xlsx",
+        [
+            [datetime.datetime(2024, 2, 29, 8, 30, 0), "商户消费", "某店", "x", "支出", 5, "零钱通", "支付成功", "WX-LEAP-1", "M1", "/"],
+        ],
+    )
+    result = import_file(db, path, "wechat")
+    assert result.added == 1
+    source = list_source_transactions(db, platform="wechat")[0]
+    assert source["occurred_at"] == "2024-02-29 08:30:00"

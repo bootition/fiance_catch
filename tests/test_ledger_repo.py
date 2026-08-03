@@ -147,7 +147,7 @@ def test_source_transaction_negative_amount_rejected(db):
             db,
             platform="alipay",
             source_txn_id="NEG",
-            occurred_at="2026-07-01",
+            occurred_at="2026-07-01 12:00:00",
             amount_cents=-1,
             direction="expense",
             status_text="success",
