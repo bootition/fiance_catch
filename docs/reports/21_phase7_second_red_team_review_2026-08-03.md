@@ -1,10 +1,11 @@
 ---
 title: 重构阶段七二次红队复审报告
-status: approved
+status: superseded
 category: reports
 created: 2026-08-03
 last-reviewed: 2026-08-03
 supersedes: reports/20_phase7_red_team_review_2026-08-03.md
+superseded-by: reports/22_phase7_final_red_team_review_2026-08-03.md
 ---
 
 # 重构阶段七二次红队复审报告
