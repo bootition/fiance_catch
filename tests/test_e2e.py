@@ -1,7 +1,8 @@
-"""阶段 6 端到端测试（规格 §7.6/§8 验收条件）。
+"""阶段 6/7 端到端测试（规格 §7.6/§8 验收条件）。
 
-使用匿名化固定样本（tests/samples/，真实导出格式）走完整用户流程：
-导入 → 决策 → 批量确认 → 规则 → 退款关联 → 统计 → 撤销。
+使用匿名化固定样本（tests/samples/，真实导出格式），从真实上传请求开始，
+之后仅通过公开 HTTP 路由与 HTML 表单字段完成全部用户动作（导入、批量确认、
+退款关联、逐笔定性、编辑、撤销），不直接调用仅供 UI 使用的领域服务。
 """
 
 import io
@@ -12,24 +13,18 @@ from fastapi.testclient import TestClient
 
 import app.main as main
 from app.db import init_db
-from app.decisions.confirm import confirm_group, group_review_items, promote_rule
 from app.decisions.constants import (
     CATEGORY_DAILY_MEALS,
     CATEGORY_TRANSPORT,
     TYPE_CONSUMPTION,
 )
-from app.importing.service import import_file
 from app.ledger_repo import (
-    create_classification_rule,
     get_ledger_entry,
+    list_audit_events,
     list_ledger_entries,
     list_review_queue,
     list_source_transactions,
-    update_ledger_entry,
 )
-from app.refunds.linking import link_refund_to_ledger
-from app.refunds.matching import find_refund_candidates
-from app.revoke import revoke_batch
 from app.settings import Settings
 from app.stats import overview_stats
 
@@ -55,22 +50,48 @@ def _upload(client, path, platform):
     )
 
 
-def _confirm_groups(settings, only=None):
+def _classification_groups(settings):
+    """查询分类区待办（unmatched/observing）按商户分组。
+
+    仅读取数据用于构造 HTTP 表单参数；确认动作本身走 /inbox/confirm。
+    """
+    rows = [
+        r
+        for r in list_review_queue(settings.db_path)
+        if r["reason"] in ("unmatched", "observing_rule")
+    ]
+    sources = {
+        s["id"]: s for s in list_source_transactions(settings.db_path)
+    }
+    groups: dict[tuple[str, str], dict] = {}
+    for r in rows:
+        source = sources.get(r["source_transaction_id"])
+        key = (
+            source["counterparty"] if source is not None else "",
+            source["platform"] if source is not None else "",
+        )
+        groups.setdefault(
+            key, {"type": r["suggested_type"], "category": r["suggested_category"]}
+        )
+    return groups
+
+
+def _confirm_groups(client, settings, only=None):
     """批量确认分类区（可选限定商户）；返回确认的组数。"""
     count = 0
-    for group in group_review_items(settings.db_path):
-        if only and group.counterparty != only:
+    for (counterparty, platform), suggestion in _classification_groups(settings).items():
+        if only and counterparty != only:
             continue
-        item = group.items[0]
-        entry_type = item.suggested_type or TYPE_CONSUMPTION
-        category = item.suggested_category or CATEGORY_DAILY_MEALS
-        confirm_group(
-            settings.db_path,
-            group.counterparty,
-            group.platform,
-            entry_type=entry_type,
-            category=category,
+        response = client.post(
+            "/inbox/confirm",
+            data={
+                "counterparty": counterparty,
+                "platform": platform,
+                "entry_type": suggestion["type"] or TYPE_CONSUMPTION,
+                "category": suggestion["category"] or CATEGORY_DAILY_MEALS,
+            },
         )
+        assert response.status_code == 200
         count += 1
     return count
 
@@ -93,6 +114,36 @@ def _ledger_by_source(settings):
         if source_id in by_source_id
         for entry_id in [by_source_id[source_id]]
     }
+
+
+def _pending_review_for(settings, txn_id: str):
+    """返回某来源流水仍 pending 的待办（查库定位表单参数）。"""
+    source_id = _source_ids(settings)[txn_id]
+    for r in list_review_queue(settings.db_path):
+        if r["source_transaction_id"] == source_id and r["status"] == "pending":
+            return r
+    return None
+
+
+def _link_refund_via_http(client, settings, refund_txn: str, consumption_txn: str):
+    """经 HTTP 完成退款关联（表单参数从库中查询构造）。"""
+    review = _pending_review_for(settings, refund_txn)
+    assert review is not None, f"no pending refund review for {refund_txn}"
+    return client.post(
+        "/inbox/refund/link",
+        data={
+            "review_id": review["id"],
+            "refund_source_id": review["source_transaction_id"],
+            "original_ledger_id": _ledger_by_source(settings)[consumption_txn],
+        },
+    )
+
+
+def _resolve_via_http(client, review_id: int, **fields):
+    """经 HTTP 逐笔定性一条高风险待办。"""
+    data = {"review_id": review_id}
+    data.update(fields)
+    return client.post("/inbox/resolve", data=data)
 
 
 # ── 验收：可导入真实格式且不保存上传原文件 ──
@@ -134,22 +185,27 @@ def test_e2e_duplicate_import_no_duplicates(client):
 
 def test_e2e_rule_active_auto_posts_and_observing_queues(client):
     c, settings = client
-    # 滴滴 → active 规则
-    create_classification_rule(
-        settings.db_path,
-        match_field="counterparty",
-        match_pattern="滴滴出行",
-        target_type=TYPE_CONSUMPTION,
-        target_category=CATEGORY_TRANSPORT,
+    # 创建规则走 /rules 表单：滴滴 → active（提升），食堂 → 观察期
+    response = c.post(
+        "/rules",
+        data={
+            "match_field": "counterparty",
+            "match_pattern": "滴滴出行",
+            "target_type": TYPE_CONSUMPTION,
+            "target_category": CATEGORY_TRANSPORT,
+        },
     )
-    promote_rule(settings.db_path, 1)
-    # 食堂 → 观察期规则（预填不自动入账）
-    create_classification_rule(
-        settings.db_path,
-        match_field="counterparty",
-        match_pattern="学校食堂",
-        target_type=TYPE_CONSUMPTION,
-        target_category=CATEGORY_DAILY_MEALS,
+    assert response.status_code == 200
+    promote = c.post("/rules/1/promote")
+    assert promote.status_code == 200
+    c.post(
+        "/rules",
+        data={
+            "match_field": "counterparty",
+            "match_pattern": "学校食堂",
+            "target_type": TYPE_CONSUMPTION,
+            "target_category": CATEGORY_DAILY_MEALS,
+        },
     )
 
     _upload(c, ALIPAY_SAMPLE, "alipay")
@@ -198,16 +254,19 @@ def test_e2e_cross_period_refund_net_cost(client):
     path.write_bytes(
         ("\n".join(["----导出----", "交易时间,交易分类,交易对方,对方账号,商品说明,收/支,金额,收/付款方式,交易状态,交易订单号,商家订单号,备注"] + rows)).encode("gb18030")
     )
-    import_file(settings.db_path, path, "alipay")
-    from app.decisions.engine import process_batch
+    response = _upload(c, path, "alipay")
+    assert response.status_code == 200
+    _confirm_groups(c, settings)
 
-    batches = [b for b in __import__("app.ledger_repo", fromlist=["list_import_batches"]).list_import_batches(settings.db_path)]
-    process_batch(settings.db_path, batches[0]["id"])
-    _confirm_groups(settings)
+    # 待确认页展示退款候选（原交易订单号匹配）
+    inbox = c.get("/inbox")
+    assert "退款待办" in inbox.text
+    assert "原交易订单号匹配" in inbox.text
 
-    sources = _source_ids(settings)
-    ledger = _ledger_by_source(settings)
-    link_refund_to_ledger(settings.db_path, sources["TXN-E2E-JUN1_RM1"], ledger["TXN-E2E-JUN1"])
+    # 经 HTTP 关联退款
+    link = _link_refund_via_http(c, settings, "TXN-E2E-JUN1_RM1", "TXN-E2E-JUN1")
+    assert link.status_code == 200
+    assert "净成本" in link.text
 
     june = overview_stats(settings.db_path, "2026-06")
     assert june["total_consumption_cents"] == 0  # 50 - 50 回写原周期
@@ -221,7 +280,7 @@ def test_e2e_cross_period_refund_net_cost(client):
 def test_e2e_bulk_confirm_creates_observing_rule(client):
     c, settings = client
     _upload(c, ALIPAY_SAMPLE, "alipay")
-    confirmed = _confirm_groups(settings, only="学校食堂")
+    confirmed = _confirm_groups(c, settings, only="学校食堂")
     assert confirmed == 1
     assert len([e for e in list_ledger_entries(settings.db_path) if e["category"] == CATEGORY_DAILY_MEALS]) == 2
 
@@ -237,35 +296,43 @@ def test_e2e_bulk_confirm_creates_observing_rule(client):
 def test_e2e_revoke_blocks_edited_and_linked(client):
     c, settings = client
     _upload(c, ALIPAY_SAMPLE, "alipay")
-    _confirm_groups(settings)
+    _confirm_groups(c, settings)
 
     sources = _source_ids(settings)
     ledger = _ledger_by_source(settings)
 
-    # 拼多多消费 → 关联退款（退款单号 _RM 前缀 = 原订单号 → 100 分）
-    candidates = find_refund_candidates(settings.db_path, sources["AP-20260709-001_RM001"])
-    assert candidates and candidates[0].match_reason == "原交易订单号匹配"
-    link_refund_to_ledger(settings.db_path, sources["AP-20260709-001_RM001"], ledger["AP-20260709-001"])
+    # 拼多多消费 → 退款关联（退款单号 _RM 前缀 = 原订单号 → 100 分）
+    inbox = c.get("/inbox")
+    assert "原交易订单号匹配" in inbox.text  # 候选可见
+    link = _link_refund_via_http(c, settings, "AP-20260709-001_RM001", "AP-20260709-001")
+    assert link.status_code == 200
 
     # 手动编辑一笔（学校食堂已确认消费，未关联退款）
     from app.ledger_repo import list_import_batches
 
     batch_id = list_import_batches(settings.db_path)[0]["id"]
     auto = next(e for e in list_ledger_entries(settings.db_path) if int(e["amount_cents"]) == 1550)
-    update_ledger_entry(
-        settings.db_path,
-        auto["id"],
-        entry_type=TYPE_CONSUMPTION,
-        amount_cents=1550,
-        category="改后分类",
-        txn_date="2026-07-01",
-        note="人工改",
+    edit = c.post(
+        f"/transactions/{auto['id']}/edit",
+        data={
+            "entry_type": TYPE_CONSUMPTION,
+            "amount": "15.50",
+            "category": "改后分类",
+            "txn_date": "2026-07-01",
+            "note": "人工改",
+        },
+        follow_redirects=False,
     )
+    assert edit.status_code == 303
 
-    result = revoke_batch(settings.db_path, batch_id)
-    blocked_reasons = {b.reason for b in result.blocked}
-    assert "manual_edited" in blocked_reasons
-    assert "refund_linked" in blocked_reasons
+    # 经 HTTP 撤销，页面明确列出阻塞项明细
+    revoke = c.post(f"/imports/{batch_id}/revoke")
+    assert revoke.status_code == 200
+    assert "阻塞项（已保留）" in revoke.text
+    assert "manual_edited" in revoke.text
+    assert "refund_linked" in revoke.text
+    assert "已人工编辑" in revoke.text
+    assert "已参与退款关联" in revoke.text
     # 拼多多消费与退款来源、被编辑记录保留
     remaining = list_source_transactions(settings.db_path)
     remaining_ids = {s["source_txn_id"] for s in remaining}
@@ -290,21 +357,23 @@ def test_e2e_overview_daily_ring_fence(client):
     path.write_bytes(
         ("\n".join(["----导出----", "交易时间,交易分类,交易对方,对方账号,商品说明,收/支,金额,收/付款方式,交易状态,交易订单号,商家订单号,备注"] + rows)).encode("gb18030")
     )
-    import_file(settings.db_path, path, "alipay")
-    from app.decisions.engine import process_batch
-    from app.ledger_repo import list_import_batches
-
-    process_batch(settings.db_path, list_import_batches(settings.db_path)[0]["id"])
-    for group in group_review_items(settings.db_path):
-        item = group.items[0]
-        category = item.suggested_category
-        if group.counterparty == "某航司":
+    response = _upload(c, path, "alipay")
+    assert response.status_code == 200
+    # 经 HTTP 批量确认全部分类区（某航司 → 旅游）
+    for (counterparty, platform), suggestion in _classification_groups(settings).items():
+        category = suggestion["category"]
+        if counterparty == "某航司":
             category = "旅游"  # 机票 → 旅游类（单独展示）
-        confirm_group(
-            settings.db_path, group.counterparty, group.platform,
-            entry_type=item.suggested_type or TYPE_CONSUMPTION,
-            category=category or "日常三餐",
+        confirmed = c.post(
+            "/inbox/confirm",
+            data={
+                "counterparty": counterparty,
+                "platform": platform,
+                "entry_type": suggestion["type"] or TYPE_CONSUMPTION,
+                "category": category or "日常三餐",
+            },
         )
+        assert confirmed.status_code == 200
 
     stats = overview_stats(settings.db_path, "2026-07")
     # 旅游/副业收入/其他收入不混入日常环比
@@ -327,16 +396,15 @@ def test_e2e_full_pipeline(client):
     _upload(c, WECHAT_SAMPLE, "wechat")
 
     # 处理分类区（含食堂批量确认、圆明园消费、闲鱼收入等）
-    _confirm_groups(settings)
-    # 关联拼多多退款与圆明园退款
-    sources = _source_ids(settings)
-    ledger = _ledger_by_source(settings)
+    _confirm_groups(c, settings)
+    # 关联拼多多退款与圆明园退款（仅经 HTTP）
     for refund_txn, consumption_txn in [
         ("AP-20260709-001_RM001", "AP-20260709-001"),
         ("WX-005", "WX-001"),
     ]:
-        if refund_txn in sources and consumption_txn in ledger:
-            link_refund_to_ledger(settings.db_path, sources[refund_txn], ledger[consumption_txn])
+        if refund_txn in _source_ids(settings) and consumption_txn in _ledger_by_source(settings):
+            link = _link_refund_via_http(c, settings, refund_txn, consumption_txn)
+            assert link.status_code == 200
 
     stats = overview_stats(settings.db_path, "2026-07")
     # 消费：食堂 31.00（净）+ 滴滴 20.00 + 拼多多 0（全退）+ 圆明园 0（全退）
@@ -444,15 +512,10 @@ def test_delete_refund_linked_via_http_no_500(client):
     path.write_bytes(
         ("\n".join(["----导出----", "交易时间,交易分类,交易对方,对方账号,商品说明,收/支,金额,收/付款方式,交易状态,交易订单号,商家订单号,备注"] + rows)).encode("gb18030")
     )
-    from app.importing.service import import_file
-    from app.decisions.engine import process_batch
-
-    r = import_file(settings.db_path, path, "alipay")
-    process_batch(settings.db_path, r.batch_id)
-    _confirm_groups(settings)
-    sources = _source_ids(settings)
-    ledger = _ledger_by_source(settings)
-    link_refund_to_ledger(settings.db_path, sources["TXN-HT-1_RM1"], ledger["TXN-HT-1"])
+    assert _upload(c, path, "alipay").status_code == 200
+    _confirm_groups(c, settings)
+    link = _link_refund_via_http(c, settings, "TXN-HT-1_RM1", "TXN-HT-1")
+    assert link.status_code == 200
     refunded_entry = next(e for e in list_ledger_entries(settings.db_path) if int(e["amount_cents"]) == 5000)
 
     response = c.post(f"/transactions/{refunded_entry['id']}/delete", follow_redirects=False)
@@ -625,3 +688,150 @@ def test_import_corrupt_wechat_xlsx_bad_xml_no_500_no_residue(client):
     assert len(list_batches(settings.db_path)) == before  # 无批次残留
     leftover = [p.name for p in settings.data_dir.iterdir() if p.name != "t.sqlite"]
     assert leftover == []  # 上传临时文件已清理
+
+
+# ── 阶段 7：高风险待办逐笔处理（仅经 HTTP）──
+
+
+def test_e2e_refund_link_via_http_closes_review_and_audits(client):
+    """退款关联全流程：候选展示 → 关联 → 待办关闭/批次计数/审计事件一致。"""
+    c, settings = client
+    _upload(c, ALIPAY_SAMPLE, "alipay")
+    _confirm_groups(c, settings)
+
+    inbox = c.get("/inbox")
+    assert "退款待办" in inbox.text
+    assert "原交易订单号匹配" in inbox.text  # 拼多多退款候选
+
+    before_batches = overview_stats(settings.db_path, "2026-07")["pending_count"]
+    link = _link_refund_via_http(c, settings, "AP-20260709-001_RM001", "AP-20260709-001")
+    assert link.status_code == 200
+    assert "已关联退款" in link.text
+
+    # 待办关闭
+    assert _pending_review_for(settings, "AP-20260709-001_RM001") is None
+    # 统计：拼多多消费全退 → 净成本 0
+    stats = overview_stats(settings.db_path, "2026-07")
+    assert stats["total_consumption_cents"] == 5100  # 食堂 31.00 + 滴滴 20.00 + 拼多多 40-40 全退
+    assert stats["pending_count"] == before_batches - 1
+    # 审计事件
+    events = [e for e in list_audit_events(settings.db_path) if e["event_type"] == "refund_linked"]
+    assert len(events) == 1
+    assert "refund_source" in events[0]["detail"]
+
+
+def test_e2e_withdrawal_resolve_via_http(client):
+    """提现逐笔选用途（未追踪账户调拨）→ transfer 入账、待办关闭、不污染统计、审计写入。"""
+    c, settings = client
+    _upload(c, ALIPAY_SAMPLE, "alipay")
+
+    review = _pending_review_for(settings, "AP-20260707-001")
+    assert review is not None and review["reason"] == "withdrawal"
+    response = _resolve_via_http(c, review["id"], purpose="transfer")
+    assert response.status_code == 200
+    assert "已定性" in response.text
+
+    assert _pending_review_for(settings, "AP-20260707-001") is None
+    entry = next(
+        e for e in list_ledger_entries(settings.db_path)
+        if e["source_transaction_id"] == review["source_transaction_id"]
+    )
+    assert entry["entry_type"] == "transfer"  # 未追踪账户调拨 → 调拨
+    assert overview_stats(settings.db_path, "2026-07")["total_consumption_cents"] == 0
+    assert overview_stats(settings.db_path, "2026-07")["total_income_cents"] == 0
+    events = [e for e in list_audit_events(settings.db_path) if e["event_type"] == "high_risk_resolved"]
+    assert any("purpose:transfer" in e["detail"] for e in events)
+
+
+def test_e2e_withdrawal_invalid_purpose_via_http_no_500(client):
+    """提现非法用途 → 错误提示非 500，不写账本不关待办。"""
+    c, settings = client
+    _upload(c, ALIPAY_SAMPLE, "alipay")
+    review = _pending_review_for(settings, "AP-20260707-001")
+    before = len(list_ledger_entries(settings.db_path))
+
+    response = _resolve_via_http(c, review["id"], purpose="steal")
+    assert response.status_code == 200
+    assert "处理失败" in response.text
+    assert len(list_ledger_entries(settings.db_path)) == before
+    assert _pending_review_for(settings, "AP-20260707-001") is not None  # 待办保留
+
+
+def test_e2e_person_transfer_resolve_via_http(client):
+    """人际转账人工定性（调拨/收入）→ 入账并关闭待办。"""
+    c, settings = client
+    _upload(c, ALIPAY_SAMPLE, "alipay")
+
+    review = _pending_review_for(settings, "AP-20260708-001")
+    assert review is not None and review["reason"] == "person_transfer"
+    response = _resolve_via_http(c, review["id"], entry_type="transfer", category="")
+    assert response.status_code == 200
+    assert "已定性" in response.text
+
+    assert _pending_review_for(settings, "AP-20260708-001") is None
+    entry = next(
+        e for e in list_ledger_entries(settings.db_path)
+        if e["source_transaction_id"] == review["source_transaction_id"]
+    )
+    assert entry["entry_type"] == "transfer"
+
+    # 微信人际转账定性为收入
+    _upload(c, WECHAT_SAMPLE, "wechat")
+    review2 = _pending_review_for(settings, "WX-002")
+    assert review2 is not None and review2["reason"] == "person_transfer"
+    response2 = _resolve_via_http(c, review2["id"], entry_type="income", category="其他收入")
+    assert response2.status_code == 200
+    entry2 = next(
+        e for e in list_ledger_entries(settings.db_path)
+        if e["source_transaction_id"] == review2["source_transaction_id"]
+    )
+    assert entry2["entry_type"] == "income"
+    assert entry2["category"] == "其他收入"
+
+
+# ── 阶段 7：流水详情与人工编辑（仅经 HTTP）──
+
+
+def test_e2e_entry_detail_and_edit_via_http(client):
+    """流水详情页展示来源/批次/退款关联/审计；编辑产生 manual_edit 审计事件。"""
+    c, settings = client
+    _upload(c, ALIPAY_SAMPLE, "alipay")
+    _confirm_groups(c, settings)
+    # 关联一笔退款
+    _link_refund_via_http(c, settings, "AP-20260709-001_RM001", "AP-20260709-001")
+
+    # 普通消费详情页：来源/批次/审计区块
+    entry = next(e for e in list_ledger_entries(settings.db_path) if int(e["amount_cents"]) == 2000)
+    detail = c.get(f"/transactions/{entry['id']}")
+    assert detail.status_code == 200
+    assert "来源流水" in detail.text
+    assert "批次归属" in detail.text
+    assert "审计事件" in detail.text
+    # 已关联退款记录：退款关联明细可见
+    pdd = next(e for e in list_ledger_entries(settings.db_path) if int(e["amount_cents"]) == 4000)
+    pdd_detail = c.get(f"/transactions/{pdd['id']}")
+    assert "退款关联" in pdd_detail.text  # 关联明细区块
+    assert "退款关联" in pdd_detail.text  # 审计事件中文标签（refund_linked）
+
+    # 编辑产生 manual_edit 审计事件并在详情页展示
+    edit = c.post(
+        f"/transactions/{entry['id']}/edit",
+        data={
+            "entry_type": TYPE_CONSUMPTION,
+            "amount": "25.00",
+            "category": "改后分类",
+            "txn_date": "2026-07-03",
+            "note": "人工改",
+        },
+        follow_redirects=False,
+    )
+    assert edit.status_code == 303
+    events = [e for e in list_audit_events(settings.db_path) if e["event_type"] == "manual_edit"]
+    assert len(events) == 1
+    assert events[0]["ref_ledger_id"] == entry["id"]
+    assert "amount:2000" in events[0]["detail"]  # 变更前金额
+    detail2 = c.get(f"/transactions/{entry['id']}")
+    assert "人工修改" in detail2.text  # 审计展示
+    edited = get_ledger_entry(settings.db_path, entry["id"])
+    assert int(edited["amount_cents"]) == 2500
+    assert edited["category"] == "改后分类"

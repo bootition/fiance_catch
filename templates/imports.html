@@ -3,6 +3,39 @@
 {% block page_title %}导入批次{% endblock %}
 {% block content %}
 {% if flash %}<p class="note-text">{{ flash }}</p>{% endif %}
+
+{% if blocked %}
+<section class="card card-emphasis">
+    <div class="section-head">
+        <h2>批次 #{{ revoked_batch_id }} 撤销结果：阻塞项（已保留）</h2>
+        <span class="state-pill">{{ blocked|length }} 项</span>
+    </div>
+    <p class="note-text">批次已标记撤销；以下记录因编辑或退款关联被保留，不会被删除。</p>
+    <table>
+        <thead>
+        <tr><th>对象</th><th>ID</th><th>原因</th><th>说明</th><th>跳转</th></tr>
+        </thead>
+        <tbody>
+        {% for b in blocked %}
+            <tr>
+                <td>{{ "账本记录" if b.kind == "ledger" else "来源流水" }}</td>
+                <td>{{ b.ref_id }}</td>
+                <td>{{ b.reason }}</td>
+                <td>{{ b.reason_label }}</td>
+                <td>
+                    {% if b.kind == "ledger" %}
+                        <a class="button-link" href="/transactions/{{ b.ref_id }}">详情</a>
+                    {% else %}
+                        <a class="button-link" href="/inbox">待确认</a>
+                    {% endif %}
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</section>
+{% endif %}
+
 <section class="card">
     <div class="section-head">
         <h2>批次列表</h2>

@@ -6,7 +6,7 @@ from .settings import Settings
 
 LEDGER_V2_MARKER = "ledger_v2_init_at"
 SCHEMA_VERSION_KEY = "schema_version"
-SCHEMA_VERSION = 4  # 3 = raw_type + 空规则 CHECK；4 = refund_links.refund_source_id 唯一
+SCHEMA_VERSION = 5  # 3 = raw_type + 空规则 CHECK；4 = refund_links.refund_source_id 唯一；5 = 审计事件类型扩展
 
 
 def _connect(db_path: str | Path):
@@ -169,7 +169,7 @@ def init_new_schema(conn: sqlite3.Connection) -> None:
         """
         CREATE TABLE IF NOT EXISTS entry_audit_events (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
-          event_type TEXT NOT NULL CHECK(event_type IN ('manual_edit','bulk_confirm','rule_applied','refund_linked','batch_revoked')),
+          event_type TEXT NOT NULL CHECK(event_type IN ('manual_edit','bulk_confirm','rule_applied','refund_linked','batch_revoked','high_risk_resolved')),
           ref_ledger_id INTEGER,
           ref_rule_id INTEGER,
           ref_batch_id INTEGER,
@@ -378,12 +378,61 @@ def _rebuild_refund_links(conn: sqlite3.Connection) -> int:
     return duplicates
 
 
+def _audit_events_has_high_risk_type(conn: sqlite3.Connection) -> bool:
+    """检测 entry_audit_events 的 event_type CHECK 是否包含 high_risk_resolved。"""
+    row = conn.execute(
+        """
+        SELECT sql FROM sqlite_master
+        WHERE type = 'table' AND name = 'entry_audit_events'
+        """
+    ).fetchone()
+    if row is None or row["sql"] is None:
+        return False
+    normalized = "".join(str(row["sql"]).lower().split())
+    return "high_risk_resolved" in normalized
+
+
+def _rebuild_audit_events(conn: sqlite3.Connection) -> None:
+    """重建 entry_audit_events 以扩展 event_type CHECK（阶段 7 高风险逐笔处理）。"""
+    conn.execute("ALTER TABLE entry_audit_events RENAME TO entry_audit_events__legacy")
+    conn.execute(
+        """
+        CREATE TABLE entry_audit_events (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          event_type TEXT NOT NULL CHECK(event_type IN ('manual_edit','bulk_confirm','rule_applied','refund_linked','batch_revoked','high_risk_resolved')),
+          ref_ledger_id INTEGER,
+          ref_rule_id INTEGER,
+          ref_batch_id INTEGER,
+          detail TEXT NOT NULL DEFAULT '',
+          created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO entry_audit_events(
+          id, event_type, ref_ledger_id, ref_rule_id, ref_batch_id, detail, created_at
+        )
+        SELECT
+          id, event_type, ref_ledger_id, ref_rule_id, ref_batch_id, detail, created_at
+        FROM entry_audit_events__legacy
+        ORDER BY id ASC
+        """
+    )
+    conn.execute("DROP TABLE entry_audit_events__legacy")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_audit_events_created "
+        "ON entry_audit_events(created_at DESC, id DESC)"
+    )
+
+
 def _migrate_v2_schema(conn: sqlite3.Connection) -> None:
     """把已初始化的 v2 库升级到当前 schema 版本（幂等，须在事务内调用）。
 
     旧 v2 库（无版本号或版本 < SCHEMA_VERSION）按版本阶梯升级：
     v3：source_transactions 补 raw_type、classification_rules 空模式 CHECK
     v4：refund_links.refund_source_id 唯一（清理多重链接脏数据）
+    v5：entry_audit_events 事件类型扩展（high_risk_resolved）
     """
     current = _current_schema_version(conn)
     if current is not None and current >= SCHEMA_VERSION:
@@ -409,6 +458,8 @@ def _migrate_v2_schema(conn: sqlite3.Connection) -> None:
                 """,
                 ("migration_cleaned_duplicate_refund_links", str(cleaned)),
             )
+    if not _audit_events_has_high_risk_type(conn):
+        _rebuild_audit_events(conn)
     conn.execute(
         """
         INSERT OR REPLACE INTO schema_meta(key, value)

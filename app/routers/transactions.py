@@ -152,6 +152,94 @@ def transactions_create(
     return templates.TemplateResponse(request, "transactions.html", context)
 
 
+@router.get("/transactions/{entry_id}", response_class=HTMLResponse)
+def transactions_detail(request: Request, entry_id: int):
+    """流水详情：来源流水、批次归属、规则命中/退款/人工改动审计、退款关联明细。"""
+    settings = current_settings()
+    with connect(settings.db_path) as conn:
+        entry = conn.execute(
+            "SELECT * FROM ledger_entries WHERE id = ?", (entry_id,)
+        ).fetchone()
+        if entry is None:
+            return RedirectResponse("/transactions?flash=记录不存在", status_code=303)
+        entry = dict(entry)
+        source = None
+        if entry["source_transaction_id"] is not None:
+            source = conn.execute(
+                "SELECT * FROM source_transactions WHERE id = ?",
+                (entry["source_transaction_id"],),
+            ).fetchone()
+            source = dict(source) if source is not None else None
+        batch = None
+        if entry["batch_id"] is not None:
+            batch = conn.execute(
+                "SELECT * FROM import_batches WHERE id = ?", (entry["batch_id"],)
+            ).fetchone()
+            batch = dict(batch) if batch is not None else None
+        links = [
+            dict(r)
+            for r in conn.execute(
+                """
+                SELECT rl.*, st.occurred_at AS refund_at,
+                       st.counterparty AS refund_counterparty,
+                       st.item_desc AS refund_item_desc
+                FROM refund_links AS rl
+                LEFT JOIN source_transactions AS st ON st.id = rl.refund_source_id
+                WHERE rl.original_ledger_id = ?
+                ORDER BY rl.linked_at DESC, rl.id DESC
+                """,
+                (entry_id,),
+            ).fetchall()
+        ]
+        audit = [
+            dict(r)
+            for r in conn.execute(
+                """
+                SELECT * FROM entry_audit_events
+                WHERE ref_ledger_id = ?
+                ORDER BY created_at DESC, id DESC
+                """,
+                (entry_id,),
+            ).fetchall()
+        ]
+        refunded_cents = int(
+            conn.execute(
+                """
+                SELECT COALESCE(SUM(refund_amount_cents), 0) AS c
+                FROM refund_links WHERE original_ledger_id = ?
+                """,
+                (entry_id,),
+            ).fetchone()["c"]
+        )
+    context = {
+        "request": request,
+        "active_page": "transactions",
+        "pending_count": _pending_count(),
+        "entry": entry,
+        "entry_type_labels": {
+            "consumption": "消费",
+            "income": "收入",
+            "transfer": "调拨",
+            "refund": "退款",
+        },
+        "audit_type_labels": {
+            "manual_edit": "人工修改",
+            "bulk_confirm": "批量确认",
+            "rule_applied": "规则自动入账",
+            "refund_linked": "退款关联",
+            "batch_revoked": "批次撤销",
+            "high_risk_resolved": "高风险定性",
+        },
+        "source": source,
+        "batch": batch,
+        "links": links,
+        "audit": audit,
+        "refunded_cents": refunded_cents,
+        "net_cost_cents": int(entry["amount_cents"]) - refunded_cents,
+    }
+    return templates.TemplateResponse(request, "entry_detail.html", context)
+
+
 @router.post("/transactions/{entry_id}/edit", response_class=HTMLResponse)
 def transactions_edit(
     request: Request,
@@ -182,7 +270,7 @@ def transactions_edit(
         flash = f"已更新 #{entry_id}（人工改动已标记）"
     except ValueError as exc:
         flash = f"更新失败：{exc}"
-    return RedirectResponse(f"/transactions?flash={quote(flash)}", status_code=303)
+    return RedirectResponse(f"/transactions/{entry_id}?flash={quote(flash)}", status_code=303)
 
 
 @router.post("/transactions/{entry_id}/delete", response_class=HTMLResponse)

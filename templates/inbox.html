@@ -10,23 +10,78 @@
         <span class="state-pill">需逐笔处理</span>
     </div>
     {% if high_risk %}
-        <table>
-            <thead>
-            <tr><th>原因</th><th>时间</th><th>对方</th><th>商品</th><th>金额（元）</th><th>平台</th></tr>
-            </thead>
-            <tbody>
-            {% for item in high_risk %}
-                <tr>
-                    <td>{{ high_risk_labels.get(item.reason, item.reason) }}</td>
-                    <td>{{ item.occurred_at }}</td>
-                    <td>{{ item.counterparty }}</td>
-                    <td>{{ item.item_desc }}</td>
-                    <td>{{ "%.2f"|format(item.amount_cents / 100) }}</td>
-                    <td>{{ "支付宝" if item.platform == "alipay" else "微信" }}</td>
-                </tr>
-            {% endfor %}
-            </tbody>
-        </table>
+        {% for item in high_risk %}
+            <div class="card card-inner">
+                <div class="section-head">
+                    <h3>
+                        {{ high_risk_labels.get(item.reason, item.reason) }}
+                        <small>#{{ item.review_id }} · {{ "支付宝" if item.platform == "alipay" else "微信" }} · {{ item.occurred_at }}</small>
+                    </h3>
+                    <span class="state-pill">{{ "%.2f"|format(item.amount_cents / 100) }} 元</span>
+                </div>
+                <p class="note-text">{{ item.counterparty or "（无对方）" }} · {{ item.item_desc or "—" }} · {{ item.source_txn_id }}</p>
+
+                {% if item.reason == "refund_pending" %}
+                    {% if item.candidates %}
+                        <form method="post" action="/inbox/refund/link" class="form-grid">
+                            <input type="hidden" name="review_id" value="{{ item.review_id }}">
+                            <input type="hidden" name="refund_source_id" value="{{ item.source_id }}">
+                            <div class="full-width">
+                                {% for cand in item.candidates %}
+                                    <label class="radio-row">
+                                        <input type="radio" name="original_ledger_id" value="{{ cand.ledger_id }}" required>
+                                        <span>
+                                            {{ cand.txn_date }} · {{ cand.counterparty or "（无对方）" }} ·
+                                            {{ "%.2f"|format(cand.amount_cents / 100) }} 元
+                                            {% if cand.already_refunded_cents %}
+                                                （已退 {{ "%.2f"|format(cand.already_refunded_cents / 100) }}，可退 {{ "%.2f"|format((cand.amount_cents - cand.already_refunded_cents) / 100) }}）
+                                            {% endif %}
+                                            · <em>{{ cand.match_reason }}</em>
+                                        </span>
+                                    </label>
+                                {% endfor %}
+                            </div>
+                            <button type="submit" class="primary-action">关联退款</button>
+                        </form>
+                    {% else %}
+                        <p class="note-text">未找到候选原消费（90 天窗口内）。保留待办，稍后人工核对。</p>
+                    {% endif %}
+                {% elif item.reason == "withdrawal" %}
+                    <form method="post" action="/inbox/resolve" class="form-grid">
+                        <input type="hidden" name="review_id" value="{{ item.review_id }}">
+                        <label>
+                            用途
+                            <select name="purpose" required>
+                                <option value="">选择用途</option>
+                                {% for value in withdrawal_purposes %}
+                                    <option value="{{ value }}">{{ withdrawal_purpose_labels.get(value, value) }}</option>
+                                {% endfor %}
+                            </select>
+                        </label>
+                        <label>分类 <input type="text" name="category" list="cat-options"></label>
+                        <button type="submit" class="primary-action">确认用途</button>
+                    </form>
+                {% else %}
+                    <form method="post" action="/inbox/resolve" class="form-grid">
+                        <input type="hidden" name="review_id" value="{{ item.review_id }}">
+                        <label>
+                            定性为
+                            <select name="entry_type" required>
+                                <option value="">选择类型</option>
+                                {% for value, label in type_labels.items() %}
+                                    <option value="{{ value }}">{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                        </label>
+                        <label>分类 <input type="text" name="category" list="cat-options"></label>
+                        <button type="submit" class="primary-action">确认定性</button>
+                    </form>
+                {% endif %}
+            </div>
+        {% endfor %}
+        <datalist id="cat-options">
+            {% for cat in categories %}<option value="{{ cat }}"></option>{% endfor %}
+        </datalist>
         <p class="note-text">提现须逐笔选用途、退款须关联原消费、人际转账须人工定性——这些记录不参与批量确认。</p>
     {% else %}
         <p>高风险区暂无待处理项。</p>

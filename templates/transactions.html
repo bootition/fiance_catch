@@ -112,6 +112,7 @@
                 <td>{% if entry.manual_edited %}是{% else %}—{% endif %}</td>
                 <td>{{ entry.note or "—" }}</td>
                 <td>
+                    <a class="button-link" href="/transactions/{{ entry.id }}">详情</a>
                     <form method="post" action="/transactions/{{ entry.id }}/delete" onsubmit="return confirm('删除该流水？')">
                         <button type="submit" class="secondary">删</button>
                     </form>

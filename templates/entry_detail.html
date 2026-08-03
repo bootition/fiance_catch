@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block title %}流水详情 #{{ entry.id }} · 本地账本{% endblock %}
+{% block page_title %}流水详情{% endblock %}
+{% block content %}
+<p><a href="/transactions" class="button-link">← 返回流水</a></p>
+{% if request.query_params.get("flash") %}<p class="note-text">{{ request.query_params.get("flash") }}</p>{% endif %}
+
+<section class="card card-emphasis">
+    <div class="section-head">
+        <h2>账本记录 #{{ entry.id }}</h2>
+        <span class="state-pill">{{ entry_type_labels.get(entry.entry_type, entry.entry_type) }} · {{ "%.2f"|format(entry.amount_cents / 100) }} 元</span>
+    </div>
+    <table>
+        <tbody>
+        <tr><td>日期</td><td>{{ entry.txn_date }}</td></tr>
+        <tr><td>类型</td><td>{{ entry_type_labels.get(entry.entry_type, entry.entry_type) }}</td></tr>
+        <tr><td>分类</td><td>{{ entry.category or "—" }}</td></tr>
+        <tr><td>金额</td><td>{{ "%.2f"|format(entry.amount_cents / 100) }} 元</td></tr>
+        <tr><td>已关联退款</td><td>{{ "%.2f"|format(refunded_cents / 100) }} 元</td></tr>
+        <tr><td>实际成本</td><td>{{ "%.2f"|format(net_cost_cents / 100) }} 元</td></tr>
+        <tr><td>人工改动</td><td>{{ "是" if entry.manual_edited else "否" }}</td></tr>
+        <tr><td>批次归属</td>
+            <td>
+                {% if batch %}批次 #{{ batch.id }}（{{ batch.file_name }}）{% else %}—（手工补记）{% endif %}
+            </td>
+        </tr>
+        <tr><td>备注</td><td>{{ entry.note or "—" }}</td></tr>
+        </tbody>
+    </table>
+</section>
+
+{% if source %}
+<section class="card">
+    <div class="section-head">
+        <h2>来源流水</h2>
+        <span class="state-pill">{{ "支付宝" if source.platform == "alipay" else "微信" }} · {{ source.source_txn_id }}</span>
+    </div>
+    <table>
+        <tbody>
+        <tr><td>交易时间</td><td>{{ source.occurred_at }}</td></tr>
+        <tr><td>对方</td><td>{{ source.counterparty or "—" }}</td></tr>
+        <tr><td>商品</td><td>{{ source.item_desc or "—" }}</td></tr>
+        <tr><td>平台状态</td><td>{{ source.status_text }}</td></tr>
+        <tr><td>原始分类</td><td>{{ source.raw_type or "—" }}</td></tr>
+        </tbody>
+    </table>
+</section>
+{% endif %}
+
+<section class="card">
+    <div class="section-head">
+        <h2>人工编辑</h2>
+        <span class="state-pill">手动修改</span>
+    </div>
+    <form method="post" action="/transactions/{{ entry.id }}/edit" class="form-grid">
+        <label>
+            类型
+            <select name="entry_type" required>
+                {% for value, label in entry_type_labels.items() %}
+                    <option value="{{ value }}" {% if entry.entry_type == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label>金额（元）<input type="text" name="amount" value="{{ "%.2f"|format(entry.amount_cents / 100) }}" required></label>
+        <label>分类 <input type="text" name="category" value="{{ entry.category or "" }}"></label>
+        <label>日期 <input type="date" name="txn_date" value="{{ entry.txn_date }}" required></label>
+        <label>备注 <input type="text" name="note" value="{{ entry.note or "" }}"></label>
+        <button type="submit" class="primary-action">保存修改</button>
+    </form>
+</section>
+
+{% if links %}
+<section class="card">
+    <div class="section-head">
+        <h2>退款关联</h2>
+    </div>
+    <table>
+        <thead>
+        <tr><th>退款来源</th><th>退款时间</th><th>退款商户</th><th>金额（元）</th><th>关联时间</th></tr>
+        </thead>
+        <tbody>
+        {% for link in links %}
+            <tr>
+                <td>{{ link.refund_source_id }}（{{ link.refund_counterparty or "—" }}）</td>
+                <td>{{ link.refund_at or "—" }}</td>
+                <td>{{ link.refund_item_desc or "—" }}</td>
+                <td>{{ "%.2f"|format(link.refund_amount_cents / 100) }}</td>
+                <td>{{ link.linked_at }}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</section>
+{% endif %}
+
+<section class="card">
+    <div class="section-head">
+        <h2>审计事件</h2>
+    </div>
+    {% if audit %}
+        <table>
+            <thead>
+            <tr><th>时间</th><th>事件</th><th>详情</th></tr>
+            </thead>
+            <tbody>
+            {% for ev in audit %}
+                <tr>
+                    <td>{{ ev.created_at }}</td>
+                    <td>{{ audit_type_labels.get(ev.event_type, ev.event_type) }}</td>
+                    <td><small>{{ ev.detail }}</small></td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <p>暂无审计事件。</p>
+    {% endif %}
+</section>
+{% endblock %}

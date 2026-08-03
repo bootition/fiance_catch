@@ -441,6 +441,19 @@ def update_ledger_entry(
             """,
             (entry_type, amount_cents, category, txn_date, note, entry_id),
         )
+        if cur.rowcount > 0:
+            _add_audit_event(
+                conn,
+                event_type="manual_edit",
+                ref_ledger_id=entry_id,
+                ref_batch_id=entry["batch_id"],
+                detail=(
+                    f"before:type:{entry['entry_type']};amount:{entry['amount_cents']};"
+                    f"category:{entry['category']};date:{entry['txn_date']};"
+                    f"after:type:{entry_type};amount:{amount_cents};"
+                    f"category:{category};date:{txn_date}"
+                ),
+            )
         return int(cur.rowcount) > 0
 
 
