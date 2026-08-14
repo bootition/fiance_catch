@@ -10,7 +10,7 @@
 | `STATUS.md` | 状态 | **当前状态唯一权威**（Verdict、剩余缺口、进行中工作） | ✅ 是 |
 | `decisions/` | 决策 | 重构规格、架构说明、工程历史 | 01/02 ✅；03 historical |
 | `reports/` | 报告 | 审计/验收/审查等事件型快照（NN_主题_YYYY-MM-DD.md） | 仅最新 ✅；其余 superseded |
-| `runbooks/` | 手册 | 运维/证据保全操作手册 | ✅ 是 |
+| `runbooks/` | 手册 | 用户使用手册、运维/证据保全操作手册 | ✅ 是 |
 | `contracts/` | 合同 | 正式签署的设计合同 | ✅ 是 |
 | `evidence/` | 证据 | 机器生成的证据 JSON、事故证据 | 证据，非结论 |
 | `archive/` | 归档 | 已废弃/完成的研究快照、执行计划 | ❌ 否（只读） |
@@ -48,7 +48,8 @@ superseded-by: ...        # 可选：被谁取代（相对 docs/ 的路径）
 - `decisions/01_refactor_spec.md` — 账单驱动重构规格（验收合同，活文档；等待用户确认后实施）
 - `decisions/02_architecture.md` — 当前架构说明
 - `decisions/03_engineering_history.md` — 工程历史（historical，仅追溯）
-- `runbooks/`、`contracts/` — 手册与合同（暂无）
+- `runbooks/01_用户使用手册.md` — 用户使用手册（启动、处理待确认、规则、流水、批次、备份）
+- `contracts/` — 合同（暂无）
 
 ## 新文档流程（Checklist）
 

@@ -46,6 +46,7 @@
 | `docs/decisions/01_refactor_spec.md` | 账单驱动重构规格（验收合同，活文档） | 等待用户确认后实施 |
 | `docs/decisions/02_architecture.md` | 当前架构说明（活文档） | 重构实施后需更新 |
 | `docs/decisions/03_engineering_history.md` | 工程历史与稳定决策 | historical：仅追溯 |
+| `docs/runbooks/01_用户使用手册.md` | 用户使用手册：启动、处理待确认、规则、流水、批次、备份 | 按实际页面核对编写 |
 
 ## 已被取代的结论（Superseded，禁止引用为当前结论）
 
