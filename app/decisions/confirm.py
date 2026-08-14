@@ -52,6 +52,7 @@ class GroupItem:
 class Group:
     counterparty: str
     platform: str
+    direction: str
     items: list[GroupItem]
 
     @property
@@ -64,8 +65,10 @@ class Group:
 
 
 def group_review_items(db_path) -> list[Group]:
-    """把 pending 分类区待确认项（未命中/观察期预填）按商户分组。
+    """把 pending 分类区待确认项（未命中/观察期预填）按商户×平台×收支方向分组。
 
+    方向参与分组键（红队修复，2026-08-14）：同一商户的收入与支出
+    方向不同，混合一组会导致批量确认把两类交易打成同一类型。
     高风险区（退款/提现/人际/其他中性资金流）不参与分组，
     由各自受约束流程逐笔处理。
     """
@@ -81,6 +84,7 @@ def group_review_items(db_path) -> list[Group]:
               rq.suggested_type,
               st.platform,
               st.counterparty,
+              st.direction,
               st.occurred_at,
               st.amount_cents,
               st.item_desc,
@@ -88,13 +92,13 @@ def group_review_items(db_path) -> list[Group]:
             FROM review_queue AS rq
             JOIN source_transactions AS st ON st.id = rq.source_transaction_id
             WHERE rq.status = 'pending' AND rq.reason IN ({placeholders})
-            ORDER BY st.counterparty ASC, st.occurred_at ASC
+            ORDER BY st.counterparty ASC, st.direction ASC, st.occurred_at ASC
             """,
             tuple(ALLOWED_BULK_REASONS),
         ).fetchall()
-    groups: dict[tuple[str, str], list[GroupItem]] = {}
+    groups: dict[tuple[str, str, str], list[GroupItem]] = {}
     for row in rows:
-        key = (row["counterparty"], row["platform"])
+        key = (row["counterparty"], row["platform"], row["direction"])
         groups.setdefault(key, []).append(
             GroupItem(
                 review_id=int(row["review_id"]),
@@ -109,7 +113,7 @@ def group_review_items(db_path) -> list[Group]:
             )
         )
     return [
-        Group(counterparty=key[0], platform=key[1], items=items)
+        Group(counterparty=key[0], platform=key[1], direction=key[2], items=items)
         for key, items in sorted(groups.items())
     ]
 
@@ -125,29 +129,54 @@ def confirm_group(
     counterparty: str,
     platform: str,
     *,
+    direction: str = "expense",
     entry_type: str,
     category: str,
     match_field: str = "counterparty",
 ) -> ConfirmResult:
-    """批量确认同商户待确认项：统一入账并关闭队列项；若 ≥2 条则建议创建观察规则。
+    """批量确认同商户同方向待确认项：统一入账并关闭队列项；若 ≥2 条则建议创建观察规则。
 
     match_field：创建规则时匹配商户（counterparty）或商品（item_desc）。
+    每条入账记录写入独立 bulk_confirm 审计事件（ref_ledger_id/ref_batch_id/ref_rule_id），
+    可从流水详情与规则命中历史追溯（红队修复，2026-08-14）。
     """
     with connect(db_path) as conn:
         conn.execute("BEGIN IMMEDIATE")
         groups = group_review_items(db_path)
         group = next(
-            (g for g in groups if g.counterparty == counterparty and g.platform == platform),
+            (
+                g
+                for g in groups
+                if g.counterparty == counterparty
+                and g.platform == platform
+                and g.direction == direction
+            ),
             None,
         )
         if group is None:
-            raise ValueError(f"no pending review group: {counterparty} ({platform})")
+            raise ValueError(
+                f"no pending review group: {counterparty} ({platform}/{direction})"
+            )
 
         high_risk = {item.reason for item in group.items} & HIGH_RISK_REASONS
         if high_risk:
             raise ValueError(
                 f"high-risk reasons cannot be bulk confirmed: {sorted(high_risk)}"
             )
+
+        rule_id = None
+        if len(group.items) >= 2:
+            pattern = (
+                counterparty if match_field == "counterparty" else group.items[0].item_desc
+            )
+            if pattern:
+                rule_id = _create_classification_rule(
+                    conn,
+                    match_field=match_field,
+                    match_pattern=pattern,
+                    target_type=entry_type,
+                    target_category=category,
+                )
 
         for item in group.items:
             source = conn.execute(
@@ -173,12 +202,17 @@ def confirm_group(
                 """,
                 (entry_id, item.review_id),
             )
-        _add_audit_event(
-            conn,
-            event_type="bulk_confirm",
-            ref_batch_id=group.items[0].source_id,
-            detail=f"counterparty:{counterparty};type:{entry_type};category:{category}",
-        )
+            _add_audit_event(
+                conn,
+                event_type="bulk_confirm",
+                ref_ledger_id=entry_id,
+                ref_rule_id=rule_id,
+                ref_batch_id=item.batch_id,
+                detail=(
+                    f"counterparty:{counterparty};direction:{direction};"
+                    f"type:{entry_type};category:{category}"
+                ),
+            )
 
         affected_batches = {
             item.batch_id for item in group.items if item.batch_id is not None
@@ -201,19 +235,6 @@ def confirm_group(
                 (real_pending, batch_id),
             )
 
-        rule_id = None
-        if len(group.items) >= 2:
-            pattern = (
-                counterparty if match_field == "counterparty" else group.items[0].item_desc
-            )
-            if pattern:
-                rule_id = _create_classification_rule(
-                    conn,
-                    match_field=match_field,
-                    match_pattern=pattern,
-                    target_type=entry_type,
-                    target_category=category,
-                )
         conn.commit()
         return ConfirmResult(confirmed=len(group.items), rule_id=rule_id)
 

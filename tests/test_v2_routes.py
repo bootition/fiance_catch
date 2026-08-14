@@ -52,3 +52,11 @@ def test_pages_render_after_production_init(tmp_path, monkeypatch):
         for path in ("/imports/new", "/inbox", "/transactions", "/rules", "/imports"):
             response = client.get(path)
             assert response.status_code == 200, f"{path} -> {response.status_code}"
+
+
+def test_index_ignores_invalid_ym(v2_client):
+    """非法 ym 参数回退默认月，不 500（红队修复，2026-08-14）。"""
+    client, _ = v2_client
+    for bad in ("abc", "2026-13", "2026-7", "2026-99"):
+        response = client.get("/", params={"ym": bad})
+        assert response.status_code == 200, f"ym={bad} -> {response.status_code}"

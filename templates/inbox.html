@@ -96,19 +96,21 @@
     {% if groups %}
         <table>
             <thead>
-            <tr><th>商户</th><th>平台</th><th>笔数</th><th>合计（元）</th><th>批量指定</th></tr>
+            <tr><th>商户</th><th>平台</th><th>方向</th><th>笔数</th><th>合计（元）</th><th>批量指定</th></tr>
             </thead>
             <tbody>
             {% for group in groups %}
                 <tr>
                     <td>{{ group.counterparty or "（无对方）" }}</td>
                     <td>{{ "支付宝" if group.platform == "alipay" else "微信" }}</td>
+                    <td>{{ direction_labels.get(group.direction, group.direction) }}</td>
                     <td>{{ group.count }}</td>
                     <td>{{ "%.2f"|format(group.total_cents / 100) }}</td>
                     <td>
                         <form method="post" action="/inbox/confirm" class="inline-form">
                             <input type="hidden" name="counterparty" value="{{ group.counterparty }}">
                             <input type="hidden" name="platform" value="{{ group.platform }}">
+                            <input type="hidden" name="direction" value="{{ group.direction }}">
                             <select name="entry_type" required>
                                 {% for value, label in type_labels.items() %}
                                     <option value="{{ value }}" {% if group.items[0].suggested_type == value %}selected{% endif %}>{{ label }}</option>

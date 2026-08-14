@@ -51,7 +51,7 @@ def _upload(client, path, platform):
 
 
 def _classification_groups(settings):
-    """查询分类区待办（unmatched/observing）按商户分组。
+    """查询分类区待办（unmatched/observing）按商户×方向分组。
 
     仅读取数据用于构造 HTTP 表单参数；确认动作本身走 /inbox/confirm。
     """
@@ -63,12 +63,13 @@ def _classification_groups(settings):
     sources = {
         s["id"]: s for s in list_source_transactions(settings.db_path)
     }
-    groups: dict[tuple[str, str], dict] = {}
+    groups: dict[tuple[str, str, str], dict] = {}
     for r in rows:
         source = sources.get(r["source_transaction_id"])
         key = (
             source["counterparty"] if source is not None else "",
             source["platform"] if source is not None else "",
+            source["direction"] if source is not None else "expense",
         )
         groups.setdefault(
             key, {"type": r["suggested_type"], "category": r["suggested_category"]}
@@ -79,7 +80,9 @@ def _classification_groups(settings):
 def _confirm_groups(client, settings, only=None):
     """批量确认分类区（可选限定商户）；返回确认的组数。"""
     count = 0
-    for (counterparty, platform), suggestion in _classification_groups(settings).items():
+    for (counterparty, platform, direction), suggestion in _classification_groups(
+        settings
+    ).items():
         if only and counterparty != only:
             continue
         response = client.post(
@@ -87,6 +90,7 @@ def _confirm_groups(client, settings, only=None):
             data={
                 "counterparty": counterparty,
                 "platform": platform,
+                "direction": direction,
                 "entry_type": suggestion["type"] or TYPE_CONSUMPTION,
                 "category": suggestion["category"] or CATEGORY_DAILY_MEALS,
             },
@@ -360,7 +364,7 @@ def test_e2e_overview_daily_ring_fence(client):
     response = _upload(c, path, "alipay")
     assert response.status_code == 200
     # 经 HTTP 批量确认全部分类区（某航司 → 旅游）
-    for (counterparty, platform), suggestion in _classification_groups(settings).items():
+    for (counterparty, platform, direction), suggestion in _classification_groups(settings).items():
         category = suggestion["category"]
         if counterparty == "某航司":
             category = "旅游"  # 机票 → 旅游类（单独展示）
@@ -369,6 +373,7 @@ def test_e2e_overview_daily_ring_fence(client):
             data={
                 "counterparty": counterparty,
                 "platform": platform,
+                "direction": direction,
                 "entry_type": suggestion["type"] or TYPE_CONSUMPTION,
                 "category": category or "日常三餐",
             },

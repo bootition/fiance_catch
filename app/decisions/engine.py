@@ -9,6 +9,7 @@
    未命中 → 待确认
 """
 
+import re
 from dataclasses import dataclass
 
 from ..db import connect
@@ -21,7 +22,6 @@ from ..ledger_repo import (
 )
 from .constants import (
     CATEGORY_SIDE_INCOME,
-    PERSON_KEYWORDS,
     REASON_OBSERVING_RULE,
     REASON_OTHER_NEUTRAL,
     REASON_PERSON_TRANSFER,
@@ -40,6 +40,9 @@ from ..refunds.status import is_refund_status
 
 ALIPAY_PERSON_TYPES = {"转账红包", "亲友代付", "红包"}
 WECHAT_PERSON_TYPES = {"转账", "微信红包"}
+
+# 商家收款码支付描述（支出方向）：不是人际"收款"（红队 P1 修复，2026-08-14）
+_MERCHANT_COLLECT_RE = re.compile(r"(收钱码|二维码|扫码)收款")
 
 PRIORITY_REFUND = 5
 PRIORITY_WITHDRAWAL = 5
@@ -74,8 +77,16 @@ def _is_person_transfer(source) -> bool:
         return True
     if source["platform"] == "wechat" and source["raw_type"] in WECHAT_PERSON_TYPES:
         return True
-    haystack = f"{source['item_desc']} {source['counterparty']}"
-    return any(kw in haystack for kw in PERSON_KEYWORDS)
+    desc = f"{source['item_desc']} {source['counterparty']}"
+    if source["direction"] == "expense" and _MERCHANT_COLLECT_RE.search(desc):
+        return False  # 商家收款码支付，不是人际转账（红队 P1 修复）
+    if "收款" in desc and source["direction"] == "income":
+        return True  # 收入方向的“收款”才是人际收款
+    if "转账" in desc:
+        return True
+    if "红包" in desc and source["direction"] != "expense":
+        return True  # 支出方向的“红包”多为促销抵扣描述
+    return False
 
 
 def _is_transfer(source) -> bool:

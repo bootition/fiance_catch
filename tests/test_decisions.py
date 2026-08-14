@@ -381,3 +381,95 @@ def test_ledger_entries_have_source_trace(db, tmp_path):
     source = list_source_transactions(db, platform="alipay")[0]
     assert entry["source_transaction_id"] == source["id"]
     assert entry["batch_id"] == result.batch_id
+
+
+# ── 红队修复回归（2026-08-14）：收款关键词方向化 ──
+
+
+def test_engine_merchant_collect_expense_is_not_person_transfer(db, tmp_path):
+    """支出方向"收钱码收款"是商家收款码支付，不得判为人际转账（红队 P1）。"""
+    result = _import_rows(
+        db,
+        tmp_path,
+        ["2026-07-31 19:00:00,餐饮美食,家乡菜,/,收钱码收款,支出,15.00,余额宝,交易成功,TXN-MC1,,"],
+    )
+    process_batch(db, result.batch_id)
+    queue = list_review_queue(db)
+    assert len(queue) == 1
+    assert queue[0]["reason"] == "unmatched"
+
+
+def test_engine_income_collect_is_person_transfer(db, tmp_path):
+    """收入方向"收钱码收款"仍是人际收款，停在待确认。"""
+    result = _import_rows(
+        db,
+        tmp_path,
+        ["2026-07-31 19:00:00,其他,某人,/,收钱码收款,收入,100.00,余额宝,交易成功,TXN-MC2,,"],
+    )
+    process_batch(db, result.batch_id)
+    queue = list_review_queue(db)
+    assert len(queue) == 1
+    assert queue[0]["reason"] == "person_transfer"
+
+
+def test_engine_expense_transfer_still_person_transfer(db, tmp_path):
+    """支出方向普通"转账"仍判人际转账，不受修复影响。"""
+    result = _import_rows(
+        db,
+        tmp_path,
+        ["2026-07-31 19:00:00,其他,某人,/,转账给朋友,支出,50.00,余额宝,交易成功,TXN-MC3,,"],
+    )
+    process_batch(db, result.batch_id)
+    queue = list_review_queue(db)
+    assert len(queue) == 1
+    assert queue[0]["reason"] == "person_transfer"
+
+
+def test_group_review_items_splits_by_direction(db, tmp_path):
+    """同一商户的收入与支出分成两组，避免批量确认混打类型（红队 P2）。"""
+    result = _import_rows(
+        db,
+        tmp_path,
+        [
+            "2026-07-31 19:00:00,餐饮美食,双向商户,/,消费,支出,20.00,余额宝,交易成功,TXN-MD1,,",
+            "2026-07-30 19:00:00,其他,双向商户,/,商品销售,收入,100.00,余额宝,交易成功,TXN-MD2,,",
+        ],
+    )
+    process_batch(db, result.batch_id)
+    groups = group_review_items(db)
+    assert len(groups) == 2
+    assert {g.direction for g in groups} == {"expense", "income"}
+    assert all(g.count == 1 for g in groups)
+
+    confirmed = confirm_group(
+        db, "双向商户", "alipay", direction="expense",
+        entry_type=TYPE_CONSUMPTION, category=CATEGORY_DAILY_MEALS,
+    )
+    assert confirmed.confirmed == 1
+    remaining = list_review_queue(db)
+    assert len(remaining) == 1
+    assert remaining[0]["reason"] == "unmatched"
+
+
+def test_confirm_group_audit_events_have_correct_refs(db, tmp_path):
+    """批量确认的审计事件逐条关联账本记录、真实批次与建议规则（红队 P2）。"""
+    result = _import_rows(
+        db,
+        tmp_path,
+        [
+            "2026-07-31 19:00:00,餐饮美食,美团外卖,/,外卖订单,支出,30.00,余额宝,交易成功,TXN-AU1,,",
+            "2026-07-30 19:00:00,餐饮美食,美团外卖,/,外卖订单,支出,25.00,余额宝,交易成功,TXN-AU2,,",
+        ],
+    )
+    process_batch(db, result.batch_id)
+    confirmed = confirm_group(
+        db, "美团外卖", "alipay",
+        entry_type=TYPE_CONSUMPTION, category=CATEGORY_DAILY_MEALS,
+    )
+    assert confirmed.rule_id is not None
+    events = [e for e in list_audit_events(db) if e["event_type"] == "bulk_confirm"]
+    assert len(events) == 2
+    entry_ids = {int(e["id"]) for e in list_ledger_entries(db)}
+    assert {int(e["ref_ledger_id"]) for e in events} == entry_ids
+    assert all(int(e["ref_batch_id"]) == result.batch_id for e in events)
+    assert all(int(e["ref_rule_id"]) == confirmed.rule_id for e in events)

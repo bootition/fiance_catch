@@ -33,6 +33,12 @@ TYPE_LABELS = {
     TYPE_TRANSFER: "调拨",
 }
 
+DIRECTION_LABELS = {
+    "expense": "支出",
+    "income": "收入",
+    "neutral": "不计收支",
+}
+
 WITHDRAWAL_PURPOSE_LABELS = {
     WITHDRAWAL_PURPOSE_TRANSFER: "未追踪账户调拨",
     WITHDRAWAL_PURPOSE_INVESTMENT: "投资",
@@ -110,6 +116,7 @@ def _inbox_context(request: Request, flash: str | None) -> dict:
         "high_risk_labels": HIGH_RISK_LABELS,
         "groups": group_review_items(settings.db_path),
         "type_labels": TYPE_LABELS,
+        "direction_labels": DIRECTION_LABELS,
         "categories": list_categories_used(settings.db_path),
         "withdrawal_purposes": WITHDRAWAL_PURPOSES,
         "withdrawal_purpose_labels": WITHDRAWAL_PURPOSE_LABELS,
@@ -129,6 +136,7 @@ async def inbox_confirm(
     request: Request,
     counterparty: str = Form(...),
     platform: str = Form(...),
+    direction: str = Form("expense"),
     entry_type: str = Form(...),
     category: str = Form(...),
 ):
@@ -138,6 +146,7 @@ async def inbox_confirm(
             settings.db_path,
             counterparty,
             platform,
+            direction=direction,
             entry_type=entry_type,
             category=category,
         )
