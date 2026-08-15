@@ -22,7 +22,7 @@
 | 真实账单受控导入 | ✅ 验收通过：真实支付宝/微信账单已导入（2026-08-03），指纹与计数逐项一致；重复上传零新增、撤销演练零残留；1756 条待确认等待用户人工处理 | `docs/reports/23_real_bills_controlled_acceptance_2026-08-14.md` |
 | 全量红队复审 | ✅ 通过：文档与实现逐项核对（23 号报告结论全部属实）；修复 P1 人际转账"收款"关键词误判（28 条真实流水回迁 unmatched，备份 `ledger.sqlite-20260814-redteam.bak`）、P2 分组不区分收支方向、批量确认审计事件关联错误、概览非法 ym 500；规格与手册 6 处失实表述已对齐 | `docs/reports/24_full_red_team_review_2026-08-14.md` |
 | 当前产品面 | ✅ 全新 v2 页面已上线（旧路由已下线）；维护页与 status 路由已移除 | `app/main.py`、`templates/base.html` |
-| 测试基线 | ✅ 直接 `pytest` 265 项通过（含红队复审新增 6 项回归）；高风险处理、编辑/撤销、自动规则入账至流水详情的 HTTP 闭环已验证 | `docs/reports/24_full_red_team_review_2026-08-14.md` |
+| 测试基线 | ✅ 直接 `pytest` 270 项通过（红队复审回归 6 项 + 同日 P3 跟进回归 5 项）；高风险处理、编辑/撤销、自动规则入账至流水详情的 HTTP 闭环已验证 | `docs/reports/24_full_red_team_review_2026-08-14.md` |
 
 （✅=已通过 🔄=进行中 ⏳=待执行）
 
