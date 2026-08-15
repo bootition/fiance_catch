@@ -22,6 +22,7 @@ from ..ledger_repo import (
 )
 from .constants import (
     CATEGORY_SIDE_INCOME,
+    CATEGORY_TRAVEL,
     REASON_OBSERVING_RULE,
     REASON_OTHER_NEUTRAL,
     REASON_PERSON_TRANSFER,
@@ -152,7 +153,13 @@ def process_source(conn, source) -> str:
         return ACTION_QUEUED
 
     rule = match_rules(conn, source["counterparty"], source["item_desc"])
-    if rule is not None and rule["status"] == RULE_STATUS_ACTIVE:
+    # 旅游类规则永不自动入账（规格 §2.2：旅游必须用户确认），
+    # 即使存在 active 旅游规则也按观察期预填处理，命中照常计数（红队修复 2026-08-14）
+    if (
+        rule is not None
+        and rule["status"] == RULE_STATUS_ACTIVE
+        and rule["target_category"] != CATEGORY_TRAVEL
+    ):
         entry_id = _create_ledger_entry(
             conn,
             entry_type=rule["target_type"],
@@ -176,7 +183,13 @@ def process_source(conn, source) -> str:
             ),
         )
         return ACTION_POSTED
-    if rule is not None and rule["status"] == RULE_STATUS_OBSERVING:
+    if (
+        rule is not None
+        and (
+            rule["status"] == RULE_STATUS_OBSERVING
+            or rule["target_category"] == CATEGORY_TRAVEL
+        )
+    ):
         _bump_rule_stats(conn, rule["id"], confirmed=False)
         _enqueue_review(
             conn,

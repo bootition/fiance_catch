@@ -11,10 +11,12 @@ from dataclasses import dataclass
 from ..db import connect
 from ..ledger_repo import (
     _add_audit_event,
+    _bump_rule_stats,
     _create_classification_rule,
     _create_ledger_entry,
 )
 from .constants import (
+    CATEGORY_TRAVEL,
     REASON_OBSERVING_RULE,
     REASON_UNMATCHED,
 )
@@ -213,6 +215,9 @@ def confirm_group(
                     f"type:{entry_type};category:{category}"
                 ),
             )
+            if rule_id is not None:
+                # 本组创建的观察规则：每条确认计一次确认数（规格 §3.5，红队修复 2026-08-14）
+                _bump_rule_stats(conn, rule_id, confirmed=True)
 
         affected_batches = {
             item.batch_id for item in group.items if item.batch_id is not None
@@ -242,7 +247,8 @@ def confirm_group(
 def promote_rule(db_path, rule_id: int) -> bool:
     """把观察期规则提升为自动入账（经用户验证）；已在队列的观察项保持待处理。
 
-    空匹配模式规则禁止提升（红队 P1：空模式会匹配全部交易）。
+    空匹配模式规则禁止提升（红队 P1：空模式会匹配全部交易）；
+    旅游类规则禁止提升（规格 §2.2：旅游必须用户确认，红队修复 2026-08-14）。
     """
     with connect(db_path) as conn:
         return _promote_rule(conn, rule_id)
@@ -250,12 +256,14 @@ def promote_rule(db_path, rule_id: int) -> bool:
 
 def _promote_rule(conn, rule_id: int) -> bool:
     rule = conn.execute(
-        "SELECT match_pattern, status FROM classification_rules WHERE id = ?",
+        "SELECT match_pattern, status, target_category FROM classification_rules WHERE id = ?",
         (rule_id,),
     ).fetchone()
     if rule is None or rule["status"] != "observing":
         return False
     if not rule["match_pattern"].strip():
+        return False
+    if rule["target_category"] == CATEGORY_TRAVEL:
         return False
     cur = conn.execute(
         """

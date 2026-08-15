@@ -35,7 +35,11 @@ class NormalizedTransaction:
 
 
 def amount_to_cents(value) -> int:
-    """金额（str/Decimal/int/float）→ 分。"""
+    """金额（str/Decimal/int/float）→ 分。
+
+    负数与超过 2 位小数的金额一律拒绝（与手工补账口径一致，红队修复 2026-08-14）：
+    解析阶段抛 ValueError 使整批导入失败回滚，坏金额永不落库。
+    """
     if isinstance(value, bool) or value is None:
         raise ValueError(f"invalid amount: {value!r}")
     try:
@@ -44,7 +48,10 @@ def amount_to_cents(value) -> int:
         raise ValueError(f"invalid amount: {value!r}") from exc
     if amount < 0:
         raise ValueError(f"negative amount: {value!r}")
-    return int((amount * 100).quantize(Decimal("1")))
+    cents = amount * 100
+    if cents != cents.to_integral_value():
+        raise ValueError(f"amount supports up to 2 decimals: {value!r}")
+    return int(cents)
 
 
 def normalize_note(note) -> str:

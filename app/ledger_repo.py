@@ -718,7 +718,8 @@ def update_rule_status(db_path, rule_id: int, status: str) -> bool:
     """
     with connect(db_path) as conn:
         row = conn.execute(
-            "SELECT status FROM classification_rules WHERE id = ?", (rule_id,)
+            "SELECT status, target_category FROM classification_rules WHERE id = ?",
+            (rule_id,),
         ).fetchone()
         if row is None:
             return False
@@ -726,6 +727,8 @@ def update_rule_status(db_path, rule_id: int, status: str) -> bool:
         if status == "active":
             if current not in ("disabled",):
                 return False
+            if row["target_category"] == "旅游":
+                return False  # 旅游类规则禁止自动入账（规格 §2.2，红队修复 2026-08-14）
         elif status == "disabled":
             if current not in ("observing", "active"):
                 return False

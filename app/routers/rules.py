@@ -5,6 +5,7 @@ from fastapi.responses import HTMLResponse
 
 from ..db import connect
 from ..decisions.confirm import promote_rule
+from ..decisions.constants import CATEGORY_TRAVEL
 from ..ledger_repo import (
     create_classification_rule,
     list_classification_rules,
@@ -103,7 +104,21 @@ def rules_create(
 def rules_promote(request: Request, rule_id: int):
     settings = current_settings()
     ok = promote_rule(settings.db_path, rule_id)
-    flash = f"规则 #{rule_id} 已提升为自动入账" if ok else f"提升失败：规则 #{rule_id} 不可提升（可能不存在/非观察期/空模式）"
+    if ok:
+        flash = f"规则 #{rule_id} 已提升为自动入账"
+    else:
+        rule = next(
+            (
+                r
+                for r in list_classification_rules(settings.db_path)
+                if int(r["id"]) == rule_id
+            ),
+            None,
+        )
+        if rule is not None and rule["target_category"] == CATEGORY_TRAVEL:
+            flash = f"规则 #{rule_id} 是旅游类规则，不可自动入账（旅游必须逐笔确认）"
+        else:
+            flash = f"提升失败：规则 #{rule_id} 不可提升（可能不存在/非观察期/空模式）"
     return _render(settings, request, flash)
 
 

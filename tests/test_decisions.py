@@ -1,4 +1,5 @@
 import datetime
+import sqlite3
 
 import openpyxl
 import pytest
@@ -9,6 +10,7 @@ from app.decisions.constants import (
     CATEGORY_DAILY_MEALS,
     CATEGORY_SIDE_INCOME,
     CATEGORY_TRANSPORT,
+    CATEGORY_TRAVEL,
     TYPE_CONSUMPTION,
     TYPE_INCOME,
     TYPE_TRANSFER,
@@ -23,6 +25,7 @@ from app.ledger_repo import (
     list_ledger_entries,
     list_review_queue,
     list_source_transactions,
+    update_rule_status,
 )
 from app.settings import Settings
 
@@ -473,3 +476,103 @@ def test_confirm_group_audit_events_have_correct_refs(db, tmp_path):
     assert {int(e["ref_ledger_id"]) for e in events} == entry_ids
     assert all(int(e["ref_batch_id"]) == result.batch_id for e in events)
     assert all(int(e["ref_rule_id"]) == confirmed.rule_id for e in events)
+    # 本组创建的观察规则：确认计数等于本组笔数（红队 P3 修复 #5）
+    rule = list_classification_rules(db)[0]
+    assert int(rule["confirm_count"]) == 2
+    assert int(rule["hit_count"]) == 0
+
+
+# ── 红队 P3 修复回归（2026-08-14）──
+
+
+def test_import_amount_over_2_decimals_rejected(db, tmp_path):
+    """导入金额超过 2 位小数整批拒绝，不入库（与手工补账口径一致，P3 #3）。"""
+    path = _alipay_file(
+        tmp_path,
+        ["2026-07-31 19:00:00,餐饮美食,某店,/,消费,支出,12.345,余额宝,交易成功,TXN-AMT1,,"],
+    )
+    with pytest.raises(ValueError):
+        import_file(db, path, "alipay")
+    assert list_source_transactions(db) == []
+    assert list_ledger_entries(db) == []
+
+
+def test_import_amount_exact_2_decimals_ok(db, tmp_path):
+    """2 位小数金额正常解析为分（不受新校验影响）。"""
+    path = _alipay_file(
+        tmp_path,
+        ["2026-07-31 19:00:00,餐饮美食,某店,/,消费,支出,12.34,余额宝,交易成功,TXN-AMT2,,"],
+    )
+    result = import_file(db, path, "alipay")
+    assert result.added == 1
+    source = list_source_transactions(db)[0]
+    assert int(source["amount_cents"]) == 1234
+
+
+def test_travel_rule_counts_hit_suggests_and_cannot_promote(db, tmp_path):
+    """旅游规则命中计入证据并预填，但禁止提升为自动入账（P3 #2）。"""
+    create_classification_rule(
+        db,
+        match_field="counterparty",
+        match_pattern="某航司",
+        target_type=TYPE_CONSUMPTION,
+        target_category=CATEGORY_TRAVEL,
+    )
+    result = _import_rows(
+        db,
+        tmp_path,
+        ["2026-07-10 10:00:00,酒店旅游,某航司,/,机票,支出,800.00,余额宝,交易成功,TXN-TV1,,"],
+    )
+    process_batch(db, result.batch_id)
+    queue = list_review_queue(db)
+    assert len(queue) == 1
+    assert queue[0]["reason"] == "observing_rule"
+    assert queue[0]["suggested_category"] == CATEGORY_TRAVEL
+    assert list_ledger_entries(db) == []
+    rule = list_classification_rules(db)[0]
+    assert int(rule["hit_count"]) == 1
+
+    # 提升被拒绝，状态保持观察期
+    assert promote_rule(db, 1) is False
+    assert list_classification_rules(db)[0]["status"] == "observing"
+
+
+def test_active_travel_rule_never_auto_posts(db, tmp_path):
+    """即使存在 active 旅游规则（遗留数据），引擎也只预填不自动入账（P3 #2）。"""
+    create_classification_rule(
+        db,
+        match_field="counterparty",
+        match_pattern="某航司",
+        target_type=TYPE_CONSUMPTION,
+        target_category=CATEGORY_TRAVEL,
+    )
+    conn = sqlite3.connect(db)
+    conn.execute("UPDATE classification_rules SET status = 'active' WHERE id = 1")
+    conn.commit()
+    conn.close()
+
+    result = _import_rows(
+        db,
+        tmp_path,
+        ["2026-07-10 10:00:00,酒店旅游,某航司,/,机票,支出,800.00,余额宝,交易成功,TXN-TV2,,"],
+    )
+    process_batch(db, result.batch_id)
+    assert list_ledger_entries(db) == []  # 不自动入账
+    queue = list_review_queue(db)
+    assert queue[0]["reason"] == "observing_rule"
+    assert queue[0]["suggested_category"] == CATEGORY_TRAVEL
+    assert int(list_classification_rules(db)[0]["hit_count"]) == 1
+
+
+def test_travel_rule_disabled_then_activate_refused(db, tmp_path):
+    """disabled → active 启用路径同样拒绝旅游规则（P3 #2）。"""
+    create_classification_rule(
+        db,
+        match_field="counterparty",
+        match_pattern="某航司",
+        target_type=TYPE_CONSUMPTION,
+        target_category=CATEGORY_TRAVEL,
+    )
+    assert update_rule_status(db, 1, "disabled") is True
+    assert update_rule_status(db, 1, "active") is False  # 旅游类禁止自动入账
+    assert list_classification_rules(db)[0]["status"] == "disabled"

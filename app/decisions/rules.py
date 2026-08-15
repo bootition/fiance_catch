@@ -1,6 +1,8 @@
-"""分类规则匹配：只匹配商户/交易对方与商品/商品说明（规格 §3.5）。"""
+"""分类规则匹配：只匹配商户/交易对方与商品/商品说明（规格 §3.5）。
 
-from .constants import CATEGORY_TRAVEL
+旅游类规则是否自动入账由引擎决定（§2.2：旅游必须用户确认），
+匹配层不做过滤，保证旅游规则命中也能计入规则证据（红队修复 2026-08-14）。
+"""
 
 RULE_STATUS_OBSERVING = "observing"
 RULE_STATUS_ACTIVE = "active"
@@ -37,8 +39,6 @@ def match_rules(conn, counterparty: str, item_desc: str, target_category: str = 
     for rule in rows:
         if not _rule_matches(rule, counterparty, item_desc):
             continue
-        if rule["target_category"] == CATEGORY_TRAVEL:
-            continue  # 旅游类即使 active 也由用户确认（规格 §2.2）
         if target_category and rule["target_category"] != target_category:
             continue
         return rule
