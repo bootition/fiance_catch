@@ -23,7 +23,7 @@
 | 全量红队复审 | ✅ 通过：文档与实现逐项核对（23 号报告结论全部属实）；修复 P1 人际转账"收款"关键词误判（28 条真实流水回迁 unmatched，备份 `ledger.sqlite-20260814-redteam.bak`）、P2 分组不区分收支方向、批量确认审计事件关联错误、概览非法 ym 500；规格与手册 6 处失实表述已对齐 | `docs/reports/24_full_red_team_review_2026-08-14.md` |
 | 当前产品面 | ✅ 全新 v2 页面已上线（旧路由已下线）；维护页与 status 路由已移除 | `app/main.py`、`templates/base.html` |
 | Inbox UX 优化 | ✅ 通过：HTMX 局部刷新（消除整页重载闪烁与跳顶）、退款无候选指引与候选刷新路由、界面紧凑化；业务规则零变更 | `docs/reports/25_inbox_ux_optimization_2026-08-27.md` |
-| Inbox 滚动性能 | ✅ 通过：高风险区分页（243→20/页）+ 分类区分页（198→30/页）与商户搜索，消除快速下滑卡顿；select 573→60、HTML 576KB→70KB | `docs/reports/26_inbox_scroll_performance_2026-08-27.md`、`docs/reports/27_inbox_scroll_performance_phase2_2026-08-27.md` |
+| Inbox 滚动性能 | ✅ 通过：高风险区分页（243→20/页）+ 分类区分页（198→30/页）与商户搜索，消除快速下滑卡顿；select 573→60、HTML 576KB→70KB；另移除 content-visibility 闪烁元凶、body 渐变改纯色、CSS 加版本号防缓存 | `docs/reports/26_inbox_scroll_performance_2026-08-27.md`、`docs/reports/27_inbox_scroll_performance_phase2_2026-08-27.md` |
 | 测试基线 | ✅ 直接 `pytest` 275 项通过（274 基线 + 分类区分页/搜索 1 项）；局部刷新、OOB 计数、退款候选刷新、双区分页翻页与搜索闭环已验证 | `docs/reports/25` / `26` / `27` |
 
 （✅=已通过 🔄=进行中 ⏳=待执行）
