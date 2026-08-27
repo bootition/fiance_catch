@@ -5,7 +5,7 @@
 > 修改任何代码/数据/文档后，如影响状态，必须同步更新本文件。
 
 - **最后更新**：2026-08-27
-- **更新人**：用户反馈第八轮修复（2026-08-27）
+- **更新人**：用户反馈第九轮修复（2026-08-27）
 
 ## 当前裁决（Verdict）
 
@@ -38,6 +38,7 @@
 | 用户反馈第七轮修复 | ✅ 通过：写入用户已给特征规则 17 条并提升 active；对全部 unmatched 自动筛选 228 笔；剩余 1143 笔规则外订单留待继续总结 | `docs/reports/34_user_feedback_round7_rule_apply_leave_unclassified_2026-08-27.md` |
 | 用户反馈第八轮修复 | ✅ 通过：schema v7 支持 raw_type 规则；支付宝收入（闲鱼收款）155 笔全部归入副业收入；收入方向未匹配清零 | `docs/reports/35_user_feedback_round8_alipay_income_rule_2026-08-27.md` |
 | 测试基线（第八轮） | ✅ 直接 `pytest` **297 项通过**（296 基线 + raw_type 规则 1 项） | `docs/reports/35_*` |
+| 用户反馈第九轮修复 | ✅ 通过：删除“支付宝收入=副业收入”宽规则；改为脱敏买家+商品标题形态识别；工资/报销不会误判 | `docs/reports/36_user_feedback_round9_income_rule_rigor_2026-08-27.md` |
 
 （✅=已通过 🔄=进行中 ⏳=待执行）
 
