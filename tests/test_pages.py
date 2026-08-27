@@ -63,7 +63,8 @@ def test_overview_shows_metrics_after_confirm(client):
     response = c.get("/", params={"ym": "2026-07"})
     assert response.status_code == 200
     text = response.text
-    assert "本月概览" in text
+    assert "概览" in text
+    assert "统计周期" in text
     assert "50.00" in text  # 消费合计 30+20
     assert "总消费" in text
     assert "日常消费环比" in text
@@ -247,6 +248,70 @@ def test_transactions_filter_by_source_status(client):
         },
     )
     assert "无匹配流水" in no_match.text
+
+
+def test_transactions_filter_accepts_empty_selects_and_keyword(client):
+    """空 batch_id/manual_only 不再 422；关键词可搜商户/商品说明。"""
+    c, _ = client
+    response = c.get(
+        "/transactions",
+        params={
+            "start": "2025-08-01",
+            "end": "2026-08-27",
+            "batch_id": "",
+            "manual_only": "",
+        },
+    )
+    assert response.status_code == 200
+
+    _upload(
+        c,
+        ["2026-07-31 19:00:00,餐饮美食,美团外卖,/,外卖订单,支出,30.00,余额宝,交易成功,TXN-Q-1,,"],
+    )
+    c.post(
+        "/inbox/confirm",
+        data={
+            "counterparty": "美团外卖",
+            "platform": "alipay",
+            "direction": "expense",
+            "entry_type": "consumption",
+            "category": "日常三餐",
+        },
+    )
+    found = c.get(
+        "/transactions",
+        params={"start": "2026-07-01", "end": "2026-07-31", "q": "外卖订单"},
+    )
+    assert "美团外卖" in found.text
+    assert "外卖订单" in found.text
+    missing = c.get(
+        "/transactions",
+        params={"start": "2026-07-01", "end": "2026-07-31", "q": "不存在的关键词"},
+    )
+    assert "无匹配流水" in missing.text
+
+
+def test_overview_week_month_year_switching(client):
+    """概览支持周/月/年切换与自由日期跳转，不再写死本月。"""
+    c, _ = client
+    week = c.get("/", params={"period": "week", "anchor": "2026-07-15"})
+    assert week.status_code == 200
+    assert "周概况" in week.text
+    assert "统计周期" in week.text
+    assert 'period=month' in week.text
+    assert 'period=year' in week.text
+    assert 'name="anchor"' in week.text
+
+    month = c.get("/", params={"period": "month", "anchor": "2026-07-15"})
+    assert "月度概况" in month.text
+    year = c.get("/", params={"period": "year", "anchor": "2026-07-15"})
+    assert "年度概况" in year.text
+    # 兼容旧链接 /?ym=YYYY-MM
+    legacy = c.get("/", params={"ym": "2026-07"})
+    assert "月度概况" in legacy.text
+    assert "2026-07" in legacy.text
+    # 非法 anchor/period 安全回退
+    assert c.get("/", params={"period": "bogus", "anchor": "bad"}).status_code == 200
 
 
 # ── 规则 ──

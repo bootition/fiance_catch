@@ -653,6 +653,8 @@ def create_classification_rule(
     match_pattern: str,
     target_type: str,
     target_category: str = "",
+    platform: str = "",
+    direction: str = "",
 ) -> int:
     with connect(db_path) as conn:
         return _create_classification_rule(
@@ -661,6 +663,8 @@ def create_classification_rule(
             match_pattern=match_pattern,
             target_type=target_type,
             target_category=target_category,
+            platform=platform,
+            direction=direction,
         )
 
 
@@ -671,21 +675,33 @@ def _create_classification_rule(
     match_pattern: str,
     target_type: str,
     target_category: str = "",
+    platform: str = "",
+    direction: str = "",
 ) -> int:
-    pattern = match_pattern.strip()
+    pattern = (match_pattern or "").strip()
     if not pattern:
         raise ValueError("match_pattern required")
+    if match_field not in ("counterparty", "item_desc"):
+        raise ValueError("invalid match_field")
+    if platform not in ("", "alipay", "wechat"):
+        raise ValueError("invalid rule platform")
+    if direction not in ("", "expense", "income", "neutral"):
+        raise ValueError("invalid rule direction")
+    if match_field == "counterparty" and "*" in pattern:
+        raise ValueError("商户名已脱敏，不能作为规则条件；请改用商品/商品说明")
     cur = conn.execute(
         """
         INSERT INTO classification_rules(
           match_field,
           match_pattern,
+          platform,
+          direction,
           target_type,
           target_category
         )
-        VALUES (?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?)
         """,
-        (match_field, pattern, target_type, target_category),
+        (match_field, pattern, platform, direction, target_type, target_category),
     )
     return int(cur.lastrowid)
 

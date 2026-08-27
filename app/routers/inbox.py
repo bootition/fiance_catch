@@ -39,6 +39,13 @@ TYPE_LABELS = {
     TYPE_TRANSFER: "调拨",
 }
 
+# 账单方向已知，分类区类型选择与方向强绑定（用户反馈 2026-08-27）
+ALLOWED_TYPES_BY_DIRECTION = {
+    "income": ((TYPE_INCOME, "收入"),),
+    "expense": ((TYPE_CONSUMPTION, "消费"), (TYPE_TRANSFER, "调拨")),
+    "neutral": ((TYPE_TRANSFER, "调拨"),),
+}
+
 DIRECTION_LABELS = {
     "expense": "支出",
     "income": "收入",
@@ -206,6 +213,7 @@ def _inbox_context(
         "cat_total_items": cat_total_items,
         "cat_total_pages": cat_total_pages,
         "type_labels": TYPE_LABELS,
+        "allowed_types_by_direction": ALLOWED_TYPES_BY_DIRECTION,
         "direction_labels": DIRECTION_LABELS,
         "categories": category_options,
         "category_options_by_type": CATEGORY_OPTIONS_BY_TYPE,

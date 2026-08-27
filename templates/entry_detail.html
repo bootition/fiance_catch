@@ -47,6 +47,18 @@
 </section>
 {% endif %}
 
+{% if source %}
+<section class="card card-secondary">
+    <div class="section-head">
+        <h2>误操作纠正</h2>
+        <span class="state-pill">退回待确认后重新分类</span>
+    </div>
+    <form method="post" action="/transactions/{{ entry.id }}/reopen" onsubmit="return confirm('确定把这笔退回待确认重新分类？已关联退款或人工编辑过的记录会被系统拒绝。')">
+        <button type="submit" class="secondary">退回待确认</button>
+    </form>
+</section>
+{% endif %}
+
 <section class="card">
     <div class="section-head">
         <h2>人工编辑</h2>

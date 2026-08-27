@@ -936,3 +936,42 @@ tbody tr:hover {
     min-height: 32px;
     padding: 6px 10px;
 }
+
+
+/* ── 概览周期切换（用户反馈 2026-08-27） ── */
+.period-card {
+    margin-bottom: 16px;
+}
+
+.period-controls {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-top: 4px;
+}
+
+.period-tabs {
+    display: flex;
+    gap: 8px;
+}
+
+.period-jump {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+}
+
+.period-jump label {
+    flex-direction: row;
+    align-items: center;
+    text-transform: none;
+    letter-spacing: 0;
+    color: var(--ink-soft);
+}
+
+.period-jump input[type="date"] {
+    width: 160px;
+}

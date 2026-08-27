@@ -21,20 +21,32 @@ def _rule_matches(rule, counterparty: str, item_desc: str) -> bool:
     return _text_contains(item_desc, rule["match_pattern"])
 
 
-def match_rules(conn, counterparty: str, item_desc: str, target_category: str = ""):
+def match_rules(
+    conn,
+    counterparty: str,
+    item_desc: str,
+    target_category: str = "",
+    platform: str = "",
+    direction: str = "",
+):
     """按优先级返回最匹配的启用规则；无命中返回 None。
 
-    优先级：active 优先于 observing；同状态取 id 最小（先创建）。
+    规则条件：match_field（商户/商品）+ platform（空为任意平台）+
+    direction（空为任意方向）；优先级：active 优先于 observing，
+    同状态取 id 最小（先创建）。
     """
     rows = conn.execute(
         """
         SELECT *
         FROM classification_rules
         WHERE status IN ('observing', 'active')
+          AND (platform = '' OR platform = ?)
+          AND (direction = '' OR direction = ?)
         ORDER BY
           CASE status WHEN 'active' THEN 0 ELSE 1 END,
           id ASC
-        """
+        """,
+        (platform, direction),
     ).fetchall()
     for rule in rows:
         if not _rule_matches(rule, counterparty, item_desc):

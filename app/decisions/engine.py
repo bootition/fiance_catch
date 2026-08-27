@@ -152,7 +152,13 @@ def process_source(conn, source) -> str:
         )
         return ACTION_QUEUED
 
-    rule = match_rules(conn, source["counterparty"], source["item_desc"])
+    rule = match_rules(
+        conn,
+        source["counterparty"],
+        source["item_desc"],
+        platform=source["platform"],
+        direction=source["direction"],
+    )
     # 旅游类规则永不自动入账（规格 §2.2：旅游必须用户确认），
     # 即使存在 active 旅游规则也按观察期预填处理，命中照常计数（红队修复 2026-08-14）
     if (

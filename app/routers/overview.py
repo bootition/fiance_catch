@@ -1,4 +1,5 @@
 import re
+from datetime import date, datetime
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
@@ -10,6 +11,7 @@ from ..templates_core import templates
 router = APIRouter(tags=["Overview"])
 
 _YM_RE = re.compile(r"^(\d{4})-(\d{2})$")
+_VALID_PERIODS = {"week", "month", "year"}
 
 
 def _safe_ym(ym: str | None) -> str | None:
@@ -22,9 +24,46 @@ def _safe_ym(ym: str | None) -> str | None:
     return None
 
 
+def _safe_period(period: str | None) -> str:
+    return period if period in _VALID_PERIODS else "month"
+
+
+def _safe_anchor(anchor: str | None) -> date | None:
+    if anchor is None:
+        return None
+    text = str(anchor).strip()
+    if not text:
+        return None
+    try:
+        return datetime.strptime(text[:10], "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+
 @router.get("/", response_class=HTMLResponse)
-def index(request: Request, ym: str | None = None):
-    stats = overview_stats(current_settings().db_path, _safe_ym(ym))
+def index(
+    request: Request,
+    ym: str | None = None,
+    period: str | None = None,
+    anchor: str | None = None,
+):
+    period = _safe_period(period)
+    anchor_date = _safe_anchor(anchor) or date.today()
+    # 兼容旧链接 /?ym=YYYY-MM：固定切到月视图
+    safe_ym = _safe_ym(ym)
+    if safe_ym:
+        period = "month"
+        anchor_date = datetime.strptime(f"{safe_ym}-01", "%Y-%m-%d").date()
+    elif ym is not None:
+        # 非法 ym 回退默认月视图（历史测试行为）
+        period = "month"
+
+    stats = overview_stats(
+        current_settings().db_path,
+        safe_ym,
+        period=period,
+        anchor=anchor_date.isoformat(),
+    )
     context = {
         "request": request,
         "active_page": "overview",

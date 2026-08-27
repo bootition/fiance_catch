@@ -18,6 +18,7 @@ from ..ledger_repo import (
 from .constants import (
     BULK_TYPES,
     CATEGORY_TRAVEL,
+    DIRECTION_ALLOWED_BULK_TYPES,
     REASON_OBSERVING_RULE,
     REASON_UNMATCHED,
     TYPE_TRANSFER,
@@ -37,6 +38,32 @@ HIGH_RISK_REASONS = frozenset(
         "other_neutral",
     }
 )
+
+
+def _looks_masked(counterparty: str) -> bool:
+    """判断商户名是否是平台隐私脱敏值（不能作为规则条件）。"""
+    text = (counterparty or "").strip()
+    return not text or text in ("/", "-") or "*" in text
+
+
+def _most_common_item_desc(items) -> str:
+    """取组内出现频次最高的非空商品说明作为规则模式；无则返回空串。"""
+    counts: dict[str, int] = {}
+    for item in items:
+        text = (item.item_desc or "").strip()
+        if not text or text in ("/", "-"):
+            continue
+        counts[text] = counts.get(text, 0) + 1
+    if not counts:
+        return ""
+    return max(counts.items(), key=lambda pair: (pair[1], -len(pair[0])))[0]
+
+
+def _rule_condition_for_group(group: Group) -> tuple[str, str]:
+    """自动规则条件：正常商户按商户名；脱敏商户改用商品说明。"""
+    if not _looks_masked(group.counterparty):
+        return "counterparty", group.counterparty.strip()
+    return "item_desc", _most_common_item_desc(group.items)
 
 
 @dataclass(frozen=True)
@@ -226,6 +253,11 @@ def confirm_group(
         category = (category or "").strip()
         if entry_type not in BULK_TYPES:
             raise ValueError(f"invalid entry_type for bulk confirm: {entry_type!r}")
+        direction = (direction or "").strip()
+        allowed = DIRECTION_ALLOWED_BULK_TYPES.get(direction, frozenset())
+        if entry_type not in allowed:
+            label = {"income": "收入", "expense": "支出", "neutral": "不计收支"}.get(direction, direction)
+            raise ValueError(f"{label}方向的交易不能确认为该类型")
         if entry_type == TYPE_TRANSFER:
             category = ""
         elif not category:
@@ -233,14 +265,14 @@ def confirm_group(
 
         rule_id = None
         if len(group.items) >= 2:
-            pattern = (
-                counterparty if match_field == "counterparty" else group.items[0].item_desc
-            )
+            match_field, pattern = _rule_condition_for_group(group)
             if pattern:
                 rule_id = _create_classification_rule(
                     conn,
                     match_field=match_field,
                     match_pattern=pattern,
+                    platform=group.platform,
+                    direction=group.direction,
                     target_type=entry_type,
                     target_category=category,
                 )
@@ -276,6 +308,10 @@ def confirm_group(
                 ref_rule_id=rule_id,
                 ref_batch_id=item.batch_id,
                 detail=(
+                    f"counterparty:{counterparty};direction:{direction};"
+                    f"type:{entry_type};category:{category};"
+                    f"rule_field:{match_field};rule_pattern:{pattern}"
+                ) if rule_id is not None else (
                     f"counterparty:{counterparty};direction:{direction};"
                     f"type:{entry_type};category:{category}"
                 ),

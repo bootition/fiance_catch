@@ -5,6 +5,7 @@ from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from ..db import connect
+from ..decisions.reopen import reopen_ledger_entry
 from ..ledger_repo import (
     create_ledger_entry,
     delete_ledger_entry,
@@ -27,6 +28,23 @@ def _pending_count() -> int:
                 "SELECT COUNT(*) AS c FROM review_queue WHERE status = 'pending'"
             ).fetchone()["c"]
         )
+
+
+def _parse_optional_int(value: str | None) -> int | None:
+    """空字符串/None 安全返回 None；非法值抛 ValueError（FastAPI 422 的替代）。"""
+    if value is None or str(value).strip() == "":
+        return None
+    try:
+        return int(str(value))
+    except ValueError as exc:
+        raise ValueError("batch_id 必须是整数") from exc
+
+
+def _parse_optional_bool(value: str | None) -> bool:
+    """空字符串视为 False；接受 true/1/yes/on。"""
+    if value is None or str(value).strip() == "":
+        return False
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _default_range() -> tuple[str, str]:
@@ -61,26 +79,46 @@ def transactions_list(
     entry_type: str | None = None,
     category: str | None = None,
     platform: str | None = None,
-    batch_id: int | None = None,
-    manual_only: bool = False,
+    batch_id: str | None = None,
+    manual_only: str | None = None,
     source_status: str | None = None,
+    q: str | None = None,
     flash: str | None = None,
 ):
     settings = current_settings()
     default_start, default_end = _default_range()
     start = start or default_start
     end = end or default_end
-    rows = list_entries_filtered(
-        settings.db_path,
-        start=start,
-        end=end + " 23:59:59" if len(end) == 10 else end,
-        entry_type=entry_type or None,
-        category=category or None,
-        platform=platform or None,
-        batch_id=batch_id,
-        manual_only=manual_only,
-        source_status=source_status or None,
-    )
+    try:
+        parsed_batch_id = _parse_optional_int(batch_id)
+        rows = list_entries_filtered(
+            settings.db_path,
+            start=start,
+            end=end + " 23:59:59" if len(end) == 10 else end,
+            entry_type=entry_type or None,
+            category=category or None,
+            platform=platform or None,
+            batch_id=parsed_batch_id,
+            manual_only=_parse_optional_bool(manual_only),
+            source_status=source_status or None,
+            q=q or None,
+        )
+    except ValueError as exc:
+        parsed_batch_id = None
+        flash = str(exc)
+        rows = list_entries_filtered(
+            settings.db_path,
+            start=start,
+            end=end + " 23:59:59" if len(end) == 10 else end,
+            entry_type=entry_type or None,
+            category=category or None,
+            platform=platform or None,
+            batch_id=None,
+            manual_only=False,
+            source_status=source_status or None,
+            q=q or None,
+        )
+    parsed_manual_only = _parse_optional_bool(manual_only)
     context = {
         "request": request,
         "active_page": "transactions",
@@ -92,9 +130,10 @@ def transactions_list(
             "entry_type": entry_type or "",
             "category": category or "",
             "platform": platform or "",
-            "batch_id": batch_id,
-            "manual_only": manual_only,
+            "batch_id": parsed_batch_id,
+            "manual_only": parsed_manual_only,
             "source_status": source_status or "",
+            "q": q or "",
         },
         "categories": list_category_options(settings.db_path),
         "source_statuses": list_source_statuses(settings.db_path),
@@ -147,7 +186,7 @@ def transactions_create(
         "entries": rows,
         "start": start,
         "end": end,
-        "filters": {"entry_type": "", "category": "", "platform": "", "batch_id": None, "manual_only": False, "source_status": ""},
+        "filters": {"entry_type": "", "category": "", "platform": "", "batch_id": None, "manual_only": False, "source_status": "", "q": ""},
         "categories": list_category_options(settings.db_path),
         "source_statuses": list_source_statuses(settings.db_path),
         "batches": _batch_options(settings.db_path),
@@ -234,6 +273,7 @@ def transactions_detail(request: Request, entry_id: int):
             "refund_linked": "退款关联",
             "batch_revoked": "批次撤销",
             "high_risk_resolved": "高风险定性",
+            "bulk_reopen": "退回待确认",
         },
         "source": source,
         "batch": batch,
@@ -276,6 +316,20 @@ def transactions_edit(
     except ValueError as exc:
         flash = f"更新失败：{exc}"
     return RedirectResponse(f"/transactions/{entry_id}?flash={quote(flash)}", status_code=303)
+
+
+@router.post("/transactions/{entry_id}/reopen", response_class=HTMLResponse)
+def transactions_reopen(request: Request, entry_id: int):
+    """把一笔账本记录退回待确认（误操作纠正；退款关联/人工编辑会阻塞）。"""
+    settings = current_settings()
+    try:
+        result = reopen_ledger_entry(settings.db_path, entry_id)
+        flash = f"已将 #{entry_id} 退回待确认，可重新分类"
+        if result.blocked_count:
+            flash += f"；阻塞 {result.blocked_count} 项（已退款关联/已人工编辑）"
+    except ValueError as exc:
+        flash = f"退回失败：{exc}"
+    return RedirectResponse(f"/transactions?flash={quote(flash)}", status_code=303)
 
 
 @router.post("/transactions/{entry_id}/delete", response_class=HTMLResponse)

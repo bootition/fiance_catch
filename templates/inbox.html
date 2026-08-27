@@ -10,11 +10,11 @@
 <script>
 (function () {
     function syncBulkCategory(form) {
-        var typeSelect = form.querySelector('select[name="entry_type"]');
+        var typeControl = form.querySelector('[name="entry_type"]');
         var catSelect = form.querySelector('select[name="category"]');
-        if (!typeSelect || !catSelect) return;
+        if (!typeControl || !catSelect) return;
 
-        var entryType = typeSelect.value;
+        var entryType = typeControl.value;
         catSelect.querySelectorAll('optgroup[data-for-type]').forEach(function (group) {
             group.disabled = group.dataset.forType !== entryType;
         });

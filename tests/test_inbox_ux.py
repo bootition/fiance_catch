@@ -317,3 +317,46 @@ def test_inbox_transfer_confirm_does_not_require_category(client):
     )
     assert response.status_code == 200
     assert "已确认 2 项" in response.text
+
+
+def test_inbox_direction_locks_entry_type(client):
+    """账单方向已知：收入组不能选择支出，服务端同步拒绝。"""
+    c, settings = client
+    _upload(
+        c,
+        [
+            "2026-07-01 10:00:00,收入,x***1,/,闲鱼虚拟资料,收入,10.00,余额宝,交易成功,TXN-DIR-1,,",
+            "2026-07-02 10:00:00,收入,x***1,/,闲鱼虚拟资料,收入,20.00,余额宝,交易成功,TXN-DIR-2,,",
+        ],
+    )
+    inbox = c.get("/inbox")
+    text = inbox.text
+    # 方向已知时 UI 不提供方向/类型选择，直接锁定为“收入”
+    assert 'name="entry_type" value="income"' in text
+    assert '>收入</span>' in text or '收入' in text
+
+    wrong = c.post(
+        "/inbox/confirm",
+        data={
+            "counterparty": "x***1",
+            "platform": "alipay",
+            "direction": "income",
+            "entry_type": "consumption",
+            "category": "日常三餐",
+        },
+    )
+    assert wrong.status_code == 200
+    assert "失败" in wrong.text
+    assert "收入方向" in wrong.text
+
+    right = c.post(
+        "/inbox/confirm",
+        data={
+            "counterparty": "x***1",
+            "platform": "alipay",
+            "direction": "income",
+            "entry_type": "income",
+            "category": "副业收入",
+        },
+    )
+    assert "已确认 2 项" in right.text

@@ -35,11 +35,19 @@
                             <input type="hidden" name="direction" value="{{ group.direction }}">
                             <input type="hidden" name="cat_page" value="{{ cat_page }}">
                             <input type="hidden" name="cat_q" value="{{ cat_q }}">
-                            <select name="entry_type" required class="group-type-select">
-                                {% for value, label in type_labels.items() %}
-                                    <option value="{{ value }}" {% if group.items[0].suggested_type == value %}selected{% endif %}>{{ label }}</option>
-                                {% endfor %}
-                            </select>
+                            {% set allowed_types = allowed_types_by_direction.get(group.direction, allowed_types_by_direction["expense"]) %}
+                            {% set suggested_type = group.items[0].suggested_type %}
+                            {% if allowed_types | length == 1 %}
+                                {% set only_type = allowed_types[0] %}
+                                <input type="hidden" name="entry_type" value="{{ only_type[0] }}">
+                                <span class="state-pill type-locked-pill">{{ only_type[1] }}</span>
+                            {% else %}
+                                <select name="entry_type" required class="group-type-select">
+                                    {% for value, label in allowed_types %}
+                                        <option value="{{ value }}" {% if suggested_type == value %}selected{% endif %}>{{ label }}</option>
+                                    {% endfor %}
+                                </select>
+                            {% endif %}
                             <select name="category" required class="group-category-select">
                                 <option value="">选择分类</option>
                                 <optgroup label="消费分类" data-for-type="consumption">

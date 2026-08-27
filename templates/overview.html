@@ -1,8 +1,31 @@
 {% extends "base.html" %}
-{% block title %}本月概览 · 本地账本{% endblock %}
-{% block page_title %}本月概览{% endblock %}
+{% block title %}概览 · 本地账本{% endblock %}
+{% block page_title %}概览{% endblock %}
 {% block content %}
-<p class="page-subtitle">{{ year_month }} 月度财务概况</p>
+<p class="page-subtitle">{{ period_label }}</p>
+
+<section class="card card-secondary period-card">
+    <div class="section-head">
+        <h2>统计周期</h2>
+        <span class="state-pill">{{ range_start }} ~ {{ range_end }}</span>
+    </div>
+    <div class="period-controls">
+        <nav class="period-tabs" aria-label="周期类型">
+            <a class="button-link {% if period == 'week' %}is-active{% endif %}" href="/?period=week&anchor={{ anchor }}">周</a>
+            <a class="button-link {% if period == 'month' %}is-active{% endif %}" href="/?period=month&anchor={{ anchor }}">月</a>
+            <a class="button-link {% if period == 'year' %}is-active{% endif %}" href="/?period=year&anchor={{ anchor }}">年</a>
+        </nav>
+        <div class="inline-actions">
+            <a class="button-link" href="/?period={{ period }}&anchor={{ prev_anchor }}">← 上一周期</a>
+            <form method="get" action="/" class="period-jump">
+                <input type="hidden" name="period" value="{{ period }}">
+                <label>跳到日期所在周期 <input type="date" name="anchor" value="{{ anchor }}" required></label>
+                <button type="submit" class="secondary">跳转</button>
+            </form>
+            <a class="button-link" href="/?period={{ period }}&anchor={{ next_anchor }}">下一周期 →</a>
+        </div>
+    </div>
+</section>
 
 <section class="card card-emphasis">
     <div class="section-head">
@@ -42,12 +65,12 @@
         <span class="state-pill">仅含日常五类</span>
     </div>
     <p>
-        本月：<strong>{{ "%.2f"|format(daily_current_cents / 100) }}</strong>
-        ｜ 上月：{{ "%.2f"|format(daily_prev_cents / 100) }}
+        本周期：<strong>{{ "%.2f"|format(daily_current_cents / 100) }}</strong>
+        ｜ 上一周期：{{ "%.2f"|format(daily_prev_cents / 100) }}
         {% if daily_change_pct is not none %}
         ｜ 环比：<strong class="{% if daily_change_pct > 0 %}metric-expense{% else %}metric-income{% endif %}">{{ "%+.1f"|format(daily_change_pct) }}%</strong>
         {% else %}
-        ｜ 环比：上月无日常消费
+        ｜ 环比：上一周期无日常消费
         {% endif %}
     </p>
 </section>
@@ -67,7 +90,7 @@
                 <td>{{ "%.2f"|format(amount / 100) }}</td>
             </tr>
         {% else %}
-            <tr><td colspan="2">本月暂无消费记录</td></tr>
+            <tr><td colspan="2">本周期暂无消费记录</td></tr>
         {% endfor %}
         </tbody>
     </table>

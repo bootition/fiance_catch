@@ -6,7 +6,7 @@ from .settings import Settings
 
 LEDGER_V2_MARKER = "ledger_v2_init_at"
 SCHEMA_VERSION_KEY = "schema_version"
-SCHEMA_VERSION = 5  # 3 = raw_type + 空规则 CHECK；4 = refund_links.refund_source_id 唯一；5 = 审计事件类型扩展
+SCHEMA_VERSION = 6  # 5 = 审计事件类型扩展；6 = 规则平台/方向条件 + bulk_reopen 审计
 
 
 def _connect(db_path: str | Path):
@@ -155,6 +155,8 @@ def init_new_schema(conn: sqlite3.Connection) -> None:
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           match_field TEXT NOT NULL CHECK(match_field IN ('counterparty','item_desc')),
           match_pattern TEXT NOT NULL CHECK(TRIM(match_pattern) <> ''),
+          platform TEXT NOT NULL DEFAULT '' CHECK(platform IN ('','alipay','wechat')),
+          direction TEXT NOT NULL DEFAULT '' CHECK(direction IN ('','expense','income','neutral')),
           target_type TEXT NOT NULL CHECK(target_type IN ('consumption','income','transfer')),
           target_category TEXT NOT NULL DEFAULT '',
           status TEXT NOT NULL DEFAULT 'observing' CHECK(status IN ('observing','active','disabled')),
@@ -169,7 +171,7 @@ def init_new_schema(conn: sqlite3.Connection) -> None:
         """
         CREATE TABLE IF NOT EXISTS entry_audit_events (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
-          event_type TEXT NOT NULL CHECK(event_type IN ('manual_edit','bulk_confirm','rule_applied','refund_linked','batch_revoked','high_risk_resolved')),
+          event_type TEXT NOT NULL CHECK(event_type IN ('manual_edit','bulk_confirm','rule_applied','refund_linked','batch_revoked','high_risk_resolved','bulk_reopen')),
           ref_ledger_id INTEGER,
           ref_rule_id INTEGER,
           ref_batch_id INTEGER,
@@ -236,6 +238,19 @@ def _ensure_v2_columns(conn: sqlite3.Connection) -> None:
             "ALTER TABLE source_transactions ADD COLUMN raw_type TEXT NOT NULL DEFAULT ''"
         )
 
+    rule_cols = {
+        row["name"]
+        for row in conn.execute("PRAGMA table_info(classification_rules)").fetchall()
+    }
+    if "platform" not in rule_cols:
+        conn.execute(
+            "ALTER TABLE classification_rules ADD COLUMN platform TEXT NOT NULL DEFAULT ''"
+        )
+    if "direction" not in rule_cols:
+        conn.execute(
+            "ALTER TABLE classification_rules ADD COLUMN direction TEXT NOT NULL DEFAULT ''"
+        )
+
 
 def _classification_rules_has_blank_check(conn: sqlite3.Connection) -> bool:
     row = conn.execute(
@@ -271,6 +286,8 @@ def _rebuild_classification_rules(conn: sqlite3.Connection) -> int:
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           match_field TEXT NOT NULL CHECK(match_field IN ('counterparty','item_desc')),
           match_pattern TEXT NOT NULL CHECK(TRIM(match_pattern) <> ''),
+          platform TEXT NOT NULL DEFAULT '' CHECK(platform IN ('','alipay','wechat')),
+          direction TEXT NOT NULL DEFAULT '' CHECK(direction IN ('','expense','income','neutral')),
           target_type TEXT NOT NULL CHECK(target_type IN ('consumption','income','transfer')),
           target_category TEXT NOT NULL DEFAULT '',
           status TEXT NOT NULL DEFAULT 'observing' CHECK(status IN ('observing','active','disabled')),
@@ -284,11 +301,13 @@ def _rebuild_classification_rules(conn: sqlite3.Connection) -> int:
     conn.execute(
         """
         INSERT INTO classification_rules(
-          id, match_field, match_pattern, target_type, target_category,
-          status, hit_count, confirm_count, created_at, updated_at
+          id, match_field, match_pattern, platform, direction, target_type,
+          target_category, status, hit_count, confirm_count, created_at, updated_at
         )
         SELECT
-          id, match_field, match_pattern, target_type, target_category,
+          id, match_field, match_pattern,
+          COALESCE(platform, ''), COALESCE(direction, ''),
+          target_type, target_category,
           status, hit_count, confirm_count, created_at, updated_at
         FROM classification_rules__legacy
         WHERE TRIM(match_pattern) <> ''
@@ -301,6 +320,57 @@ def _rebuild_classification_rules(conn: sqlite3.Connection) -> int:
         "ON classification_rules(status, id)"
     )
     return dropped
+
+
+def _repair_masked_counterparty_rules(conn: sqlite3.Connection) -> int:
+    """把脱敏商户自动规则改写为商品说明规则（v6 迁移）。"""
+    masked = conn.execute(
+        """
+        SELECT * FROM classification_rules
+        WHERE match_field = 'counterparty'
+          AND (match_pattern LIKE '%*%' OR match_pattern IN ('', '/', '-'))
+        ORDER BY id ASC
+        """
+    ).fetchall()
+    repaired = 0
+    for rule in masked:
+        representative = conn.execute(
+            """
+            SELECT st.item_desc AS item_desc, st.platform AS platform, st.direction AS direction
+            FROM entry_audit_events AS e
+            JOIN ledger_entries AS le ON le.id = e.ref_ledger_id
+            JOIN source_transactions AS st ON st.id = le.source_transaction_id
+            WHERE e.ref_rule_id = ?
+              AND e.event_type = 'bulk_confirm'
+              AND TRIM(st.item_desc) <> ''
+              AND st.item_desc NOT IN ('/', '-')
+            GROUP BY st.item_desc, st.platform, st.direction
+            ORDER BY COUNT(*) DESC, st.item_desc ASC
+            LIMIT 1
+            """,
+            (int(rule["id"]),),
+        ).fetchone()
+        if representative is None:
+            conn.execute("DELETE FROM classification_rules WHERE id = ?", (int(rule["id"]),))
+            continue
+        pattern = str(representative["item_desc"]).strip()
+        if not pattern:
+            conn.execute("DELETE FROM classification_rules WHERE id = ?", (int(rule["id"]),))
+            continue
+        conn.execute(
+            """
+            UPDATE classification_rules
+            SET match_field = 'item_desc',
+                match_pattern = ?,
+                platform = ?,
+                direction = ?,
+                updated_at = datetime('now')
+            WHERE id = ?
+            """,
+            (pattern, representative["platform"], representative["direction"], int(rule["id"])),
+        )
+        repaired += 1
+    return repaired
 
 
 def _current_schema_version(conn: sqlite3.Connection) -> int | None:
@@ -392,14 +462,27 @@ def _audit_events_has_high_risk_type(conn: sqlite3.Connection) -> bool:
     return "high_risk_resolved" in normalized
 
 
+def _audit_events_has_bulk_reopen_type(conn: sqlite3.Connection) -> bool:
+    row = conn.execute(
+        """
+        SELECT sql FROM sqlite_master
+        WHERE type = 'table' AND name = 'entry_audit_events'
+        """
+    ).fetchone()
+    if row is None or row["sql"] is None:
+        return False
+    normalized = "".join(str(row["sql"]).lower().split())
+    return "bulk_reopen" in normalized
+
+
 def _rebuild_audit_events(conn: sqlite3.Connection) -> None:
-    """重建 entry_audit_events 以扩展 event_type CHECK（阶段 7 高风险逐笔处理）。"""
+    """重建 entry_audit_events 以扩展 event_type CHECK（高风险 + 退回待确认）。"""
     conn.execute("ALTER TABLE entry_audit_events RENAME TO entry_audit_events__legacy")
     conn.execute(
         """
         CREATE TABLE entry_audit_events (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
-          event_type TEXT NOT NULL CHECK(event_type IN ('manual_edit','bulk_confirm','rule_applied','refund_linked','batch_revoked','high_risk_resolved')),
+          event_type TEXT NOT NULL CHECK(event_type IN ('manual_edit','bulk_confirm','rule_applied','refund_linked','batch_revoked','high_risk_resolved','bulk_reopen')),
           ref_ledger_id INTEGER,
           ref_rule_id INTEGER,
           ref_batch_id INTEGER,
@@ -433,6 +516,8 @@ def _migrate_v2_schema(conn: sqlite3.Connection) -> None:
     v3：source_transactions 补 raw_type、classification_rules 空模式 CHECK
     v4：refund_links.refund_source_id 唯一（清理多重链接脏数据）
     v5：entry_audit_events 事件类型扩展（high_risk_resolved）
+    v6：classification_rules 增加 platform/direction 条件，修复脱敏商户规则；
+        entry_audit_events 增加 bulk_reopen（退回待确认）
     """
     current = _current_schema_version(conn)
     if current is not None and current >= SCHEMA_VERSION:
@@ -458,7 +543,16 @@ def _migrate_v2_schema(conn: sqlite3.Connection) -> None:
                 """,
                 ("migration_cleaned_duplicate_refund_links", str(cleaned)),
             )
-    if not _audit_events_has_high_risk_type(conn):
+    repaired_masked = _repair_masked_counterparty_rules(conn)
+    if repaired_masked > 0:
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO schema_meta(key, value)
+            VALUES (?, ?)
+            """,
+            ("migration_repaired_masked_counterparty_rules", str(repaired_masked)),
+        )
+    if not _audit_events_has_high_risk_type(conn) or not _audit_events_has_bulk_reopen_type(conn):
         _rebuild_audit_events(conn)
     conn.execute(
         """
@@ -513,8 +607,12 @@ def ensure_ledger_v2(settings: Settings) -> bool:
     with _connect(settings.db_path) as conn:
         initialized = new_schema_initialized(conn)
         has_legacy = _legacy_has_data(conn)
+        current_version = _current_schema_version(conn) if initialized else None
     backed_up = False
-    if has_legacy:
+    needs_migration = initialized and (
+        current_version is None or current_version < SCHEMA_VERSION
+    )
+    if has_legacy or needs_migration:
         backup_db(settings)
         backed_up = True
     with _connect(settings.db_path) as conn:

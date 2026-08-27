@@ -250,6 +250,12 @@ def test_init_db_upgrades_stage2_v2_schema(tmp_path):
             for row in conn.execute("PRAGMA table_info(source_transactions)").fetchall()
         }
         assert "raw_type" in cols
+        rule_cols = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(classification_rules)").fetchall()
+        }
+        assert "platform" in rule_cols
+        assert "direction" in rule_cols
         rule_sql = conn.execute(
             "SELECT sql FROM sqlite_master WHERE type='table' AND name='classification_rules'"
         ).fetchone()["sql"]
@@ -257,7 +263,7 @@ def test_init_db_upgrades_stage2_v2_schema(tmp_path):
         version = conn.execute(
             "SELECT value FROM schema_meta WHERE key = 'schema_version'"
         ).fetchone()
-        assert version is not None and version["value"] == "5"
+        assert version is not None and version["value"] == "6"
 
 
 def test_init_db_upgrade_idempotent(tmp_path):
@@ -271,7 +277,7 @@ def test_init_db_upgrade_idempotent(tmp_path):
         version = conn.execute(
             "SELECT value FROM schema_meta WHERE key = 'schema_version'"
         ).fetchone()
-        assert version["value"] == "5"
+        assert version["value"] == "6"
 
 
 def test_upgraded_lib_supports_import_and_decisions(tmp_path):
@@ -340,7 +346,7 @@ def test_init_db_upgrade_with_blank_rule_isolated(tmp_path):
         version = conn.execute(
             "SELECT value FROM schema_meta WHERE key = 'schema_version'"
         ).fetchone()
-        assert version["value"] == "5"
+        assert version["value"] == "6"
         rules = conn.execute(
             "SELECT match_pattern, status FROM classification_rules ORDER BY id"
         ).fetchall()

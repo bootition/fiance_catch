@@ -4,6 +4,27 @@
 {% block content %}
 {% if flash %}<p class="note-text">{{ flash }}</p>{% endif %}
 
+{% if blocked %}
+<section class="card card-emphasis">
+    <div class="section-head">
+        <h2>规则 #{{ reopened_rule_id }} 退回结果：阻塞项</h2>
+        <span class="state-pill">{{ blocked|length }} 项</span>
+    </div>
+    <table>
+        <thead><tr><th>账本记录</th><th>原因</th><th>跳转</th></tr></thead>
+        <tbody>
+        {% for b in blocked %}
+            <tr>
+                <td>#{{ b.entry_id }}</td>
+                <td>{{ b.reason_label }}</td>
+                <td><a class="button-link" href="/transactions/{{ b.entry_id }}">详情</a></td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</section>
+{% endif %}
+
 <section class="card card-emphasis">
     <div class="section-head">
         <h2>新建规则</h2>
@@ -17,7 +38,24 @@
                 <option value="item_desc">商品/商品说明</option>
             </select>
         </label>
-        <label>匹配内容 <input type="text" name="match_pattern" placeholder="如：美团外卖" required></label>
+        <label>匹配内容 <input type="text" name="match_pattern" placeholder="如：美团外卖 / 闲鱼虚拟资料" required></label>
+        <p class="note-text full-width">建议优先用「商品/商品说明」建立规则；支付宝脱敏商户名（含 `*`）不能作为规则条件。</p>
+        <label>
+            平台条件
+            <select name="platform">
+                {% for value, label in platform_labels.items() %}
+                    <option value="{{ value }}">{{ label }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label>
+            方向条件
+            <select name="direction">
+                {% for value, label in direction_rule_labels.items() %}
+                    <option value="{{ value }}">{{ label }}</option>
+                {% endfor %}
+            </select>
+        </label>
         <label>
             目标类型
             <select name="target_type" required>
@@ -44,7 +82,7 @@
     <table>
         <thead>
         <tr>
-            <th>ID</th><th>匹配</th><th>目标</th><th>状态</th>
+            <th>ID</th><th>匹配</th><th>平台</th><th>方向</th><th>目标</th><th>状态</th>
             <th>命中</th><th>确认</th><th>操作</th>
         </tr>
         </thead>
@@ -52,13 +90,20 @@
         {% for rule in rules %}
             <tr>
                 <td>#{{ rule.id }}</td>
-                <td>{{ field_labels.get(rule.match_field, rule.match_field) }} 含「{{ rule.match_pattern }}」</td>
+                <td>{{ field_labels.get(rule.match_field, rule.match_field) }} 含「{{ rule.match_pattern | truncate(40, true, "…") }}」</td>
+                <td>{{ platform_labels.get(rule.platform, rule.platform or "全部") }}</td>
+                <td>{{ direction_rule_labels.get(rule.direction, rule.direction or "全部") }}</td>
                 <td>{{ type_labels.get(rule.target_type, rule.target_type) }} / {{ rule.target_category or "—" }}</td>
                 <td>{{ status_labels.get(rule.status, rule.status) }}</td>
                 <td>{{ rule.hit_count }}</td>
                 <td>{{ rule.confirm_count }}</td>
                 <td class="inline-actions">
                     <a class="button-link quiet-link" href="/rules?rule_id={{ rule.id }}">命中历史</a>
+                    {% if rule.confirm_count > 0 %}
+                        <form method="post" action="/rules/{{ rule.id }}/reopen" onsubmit="return confirm('把这批批量确认的流水退回待确认重新分类？已退款关联/已人工编辑的会保留。')">
+                            <button type="submit" class="secondary">退回确认流水</button>
+                        </form>
+                    {% endif %}
                     {% if rule.status == "observing" %}
                         <form method="post" action="/rules/{{ rule.id }}/promote">
                             <button type="submit" class="secondary">提升为自动入账</button>
@@ -76,7 +121,7 @@
                 </td>
             </tr>
         {% else %}
-            <tr><td colspan="7">暂无规则</td></tr>
+            <tr><td colspan="9">暂无规则</td></tr>
         {% endfor %}
         </tbody>
     </table>

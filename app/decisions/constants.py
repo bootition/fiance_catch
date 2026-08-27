@@ -33,6 +33,14 @@ TYPE_REFUND = "refund"
 # 批量指定/规则目标类型（不含退款：退款走受约束关联流程）
 BULK_TYPES = (TYPE_CONSUMPTION, TYPE_INCOME, TYPE_TRANSFER)
 
+# 账单方向已知：分类区允许的类型必须与方向一致（用户反馈 2026-08-27）
+# income 只能是收入；expense 可以是消费或调拨；neutral 只能是调拨
+DIRECTION_ALLOWED_BULK_TYPES = {
+    "income": frozenset({TYPE_INCOME}),
+    "expense": frozenset({TYPE_CONSUMPTION, TYPE_TRANSFER}),
+    "neutral": frozenset({TYPE_TRANSFER}),
+}
+
 # 交易类型 → 可选正式分类（PRD §2.2/§3.3）
 CATEGORY_OPTIONS_BY_TYPE = {
     TYPE_CONSUMPTION: (

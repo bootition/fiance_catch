@@ -6,6 +6,7 @@ import pytest
 
 from app.db import init_db
 from app.decisions.confirm import confirm_group, group_review_items, promote_rule
+from app.decisions.rules import match_rules
 from app.decisions.constants import (
     CATEGORY_DAILY_MEALS,
     CATEGORY_SIDE_INCOME,
@@ -576,3 +577,56 @@ def test_travel_rule_disabled_then_activate_refused(db, tmp_path):
     assert update_rule_status(db, 1, "disabled") is True
     assert update_rule_status(db, 1, "active") is False  # 旅游类禁止自动入账
     assert list_classification_rules(db)[0]["status"] == "disabled"
+
+
+def test_masked_counterparty_group_creates_item_desc_rule(db, tmp_path):
+    """脱敏商户（含 *）不能成为规则条件；自动规则改按商品说明并固化平台/方向。"""
+    result = _import_rows(
+        db,
+        tmp_path,
+        [
+            "2026-07-01 10:00:00,收入,****0,/,闲鱼虚拟资料,收入,10.00,余额宝,交易成功,TXN-MR-1,,",
+            "2026-07-02 10:00:00,收入,****0,/,闲鱼虚拟资料,收入,20.00,余额宝,交易成功,TXN-MR-2,,",
+        ],
+    )
+    process_batch(db, result.batch_id)
+    confirmed = confirm_group(
+        db, "****0", "alipay", direction="income",
+        entry_type=TYPE_INCOME, category=CATEGORY_SIDE_INCOME,
+    )
+    assert confirmed.rule_id is not None
+    rule = list_classification_rules(db)[0]
+    assert rule["match_field"] == "item_desc"
+    assert rule["match_pattern"] == "闲鱼虚拟资料"
+    assert rule["platform"] == "alipay"
+    assert rule["direction"] == "income"
+
+
+def test_match_rules_respects_platform_and_direction(db, tmp_path):
+    """规则条件包含平台与方向：不匹配的规则不命中。"""
+    rule_id = create_classification_rule(
+        db,
+        match_field="item_desc",
+        match_pattern="闲鱼虚拟资料",
+        target_type=TYPE_INCOME,
+        target_category=CATEGORY_SIDE_INCOME,
+        platform="alipay",
+        direction="income",
+    )
+    promote_rule(db, rule_id)
+    from app.db import connect
+    with connect(db) as conn:
+        assert match_rules(conn, "****0", "闲鱼虚拟资料", platform="alipay", direction="income")["id"] == rule_id
+        assert match_rules(conn, "****0", "闲鱼虚拟资料", platform="wechat", direction="income") is None
+        assert match_rules(conn, "****0", "闲鱼虚拟资料", platform="alipay", direction="expense") is None
+
+
+def test_masked_counterparty_cannot_create_manual_rule(db):
+    with pytest.raises(ValueError):
+        create_classification_rule(
+            db,
+            match_field="counterparty",
+            match_pattern="****0",
+            target_type=TYPE_INCOME,
+            target_category=CATEGORY_SIDE_INCOME,
+        )

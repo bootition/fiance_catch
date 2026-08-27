@@ -18,7 +18,8 @@ def test_index_returns_200_after_production_migration(v2_client):
     client, _ = v2_client
     response = client.get("/")
     assert response.status_code == 200
-    assert "本月概览" in response.text
+    assert "概览" in response.text
+    assert "统计周期" in response.text
 
 
 def test_index_shows_overview_metrics(v2_client):

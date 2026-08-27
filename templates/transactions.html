@@ -11,6 +11,7 @@
     <form method="get" action="/transactions" class="form-grid compact-form">
         <label>开始 <input type="date" name="start" value="{{ start }}"></label>
         <label>结束 <input type="date" name="end" value="{{ end }}"></label>
+        <label class="full-width">关键词 <input type="search" name="q" value="{{ filters.q }}" placeholder="搜索商户 / 商品说明 / 单号 / 备注"></label>
         <label>
             类型
             <select name="entry_type">
