@@ -53,6 +53,7 @@ last-reviewed: 2026-08-27
 ### Rules
 
 - `app/decisions/rules.py`：按匹配字段 + 平台 + 方向匹配；active 优先于 observing。
+- `app/decisions/builtin_rules.py`：内置高置信交通识别规则（地铁_/单车/骑行/公交 → 出行交通），新导入自动入账，可对存量 unmatched 一次性应用。
 - 旅游类规则命中只预填且禁止提升为自动入账（规格 §2.2/§3.5）。
 
 ## Key Modules
