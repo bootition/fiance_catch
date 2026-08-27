@@ -33,7 +33,7 @@ body {
     margin: 0;
     min-height: 100vh;
     color: var(--ink);
-    background: linear-gradient(180deg, var(--bg-top) 0%, var(--bg-mid) 30%, var(--bg-floor) 30%, var(--bg-floor) 100%);
+    background: var(--bg-floor);
 }
 
 .container {
@@ -93,7 +93,10 @@ h3 {
     justify-content: space-between;
     gap: 16px;
     flex-wrap: wrap;
-    margin-bottom: 12px;
+    margin-bottom: 16px;
+    background: linear-gradient(135deg, var(--bg-top) 0%, var(--bg-mid) 100%);
+    border-radius: 16px;
+    padding: 22px 24px;
 }
 
 .page-nav {
@@ -109,13 +112,13 @@ h3 {
     border: 1px solid rgba(212, 223, 238, 0.92);
     border-radius: var(--radius);
     padding: 14px;
-    box-shadow: var(--shadow-sm);
+    box-shadow: none;
 }
 
 .card-emphasis {
     background: linear-gradient(180deg, rgba(255, 255, 255, 0.96) 0%, rgba(247, 251, 255, 0.93) 100%);
     border-color: rgba(155, 188, 221, 0.8);
-    box-shadow: var(--shadow-md);
+    box-shadow: none;
 }
 
 .card-secondary {
@@ -128,8 +131,6 @@ h3 {
     border-color: #dfe7f2;
     box-shadow: none;
     padding: 12px 14px;
-    content-visibility: auto;
-    contain-intrinsic-size: auto 150px;
 }
 
 .card-inner .section-head {
@@ -375,13 +376,11 @@ button {
     color: #ffffff;
     cursor: pointer;
     font-weight: 700;
-    transition: transform 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
+    transition: background-color 0.15s ease;
 }
 
 button:hover {
     background: var(--primary-hover);
-    transform: translateY(-1px);
-    box-shadow: 0 7px 16px rgba(21, 82, 132, 0.3);
 }
 
 button:disabled {
@@ -451,19 +450,17 @@ button.tiny-danger:hover {
     background: rgba(248, 252, 255, 0.95);
     font-size: 13px;
     font-weight: 600;
-    transition: transform 0.15s ease, background-color 0.15s ease;
+    transition: background-color 0.15s ease;
 }
 
 .button-link:hover {
     background: #ebf5ff;
-    transform: translateY(-1px);
 }
 
 .button-link.is-active {
     border-color: var(--primary);
     color: #ffffff;
     background: linear-gradient(135deg, #0c5fa8 0%, #0f74bf 100%);
-    box-shadow: 0 9px 20px rgba(16, 106, 173, 0.32);
 }
 
 .button-link.quiet-link {
