@@ -161,3 +161,24 @@ def test_inbox_refund_no_candidate_hint_and_refresh(client):
     frag = c.get(f"/inbox/refund-candidates/{review_id}")
     assert frag.status_code == 200
     assert frag.text == ""  # 待办已处理，卡片移除
+
+
+def test_inbox_high_risk_pagination(client):
+    """高风险区超过每页上限时分页：第 1 页 20 条，翻页局部刷新出剩余条数。"""
+    c, settings = client
+    rows = [
+        f"2026-07-{day:02d} 10:00:00,账户存取,某银行,/,提现到银行卡,不计收支,500.00,账户余额,交易成功,TXN-PG-{day},,"
+        for day in range(1, 26)
+    ]
+    _upload(c, rows)
+    page1 = c.get("/inbox")
+    assert page1.status_code == 200
+    assert page1.text.count("card-inner") == 20
+    assert "第 1 / 2 页" in page1.text
+    assert "共 25 条" in page1.text
+    # 翻页：局部刷新只返回高风险区 section
+    page2 = c.get("/inbox/high-risk", params={"page": 2})
+    assert page2.status_code == 200
+    assert page2.text.count("card-inner") == 5
+    assert "第 2 / 2 页" in page2.text
+    assert "<html" not in page2.text

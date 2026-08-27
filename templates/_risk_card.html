@@ -14,6 +14,7 @@
                   hx-post="/inbox/refund/link" hx-target="#high-risk-section" hx-swap="outerHTML">
                 <input type="hidden" name="review_id" value="{{ item.review_id }}">
                 <input type="hidden" name="refund_source_id" value="{{ item.source_id }}">
+                <input type="hidden" name="risk_page" value="{{ risk_page }}">
                 <div class="full-width">
                     {% for cand in item.candidates %}
                         <label class="radio-row">
@@ -44,6 +45,7 @@
         <form method="post" action="/inbox/resolve" class="form-grid"
               hx-post="/inbox/resolve" hx-target="#high-risk-section" hx-swap="outerHTML">
             <input type="hidden" name="review_id" value="{{ item.review_id }}">
+            <input type="hidden" name="risk_page" value="{{ risk_page }}">
             <label>
                 用途
                 <select name="purpose" required>
@@ -60,6 +62,7 @@
         <form method="post" action="/inbox/resolve" class="form-grid"
               hx-post="/inbox/resolve" hx-target="#high-risk-section" hx-swap="outerHTML">
             <input type="hidden" name="review_id" value="{{ item.review_id }}">
+            <input type="hidden" name="risk_page" value="{{ risk_page }}">
             <label>
                 定性为
                 <select name="entry_type" required>

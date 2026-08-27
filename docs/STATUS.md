@@ -23,7 +23,8 @@
 | 全量红队复审 | ✅ 通过：文档与实现逐项核对（23 号报告结论全部属实）；修复 P1 人际转账"收款"关键词误判（28 条真实流水回迁 unmatched，备份 `ledger.sqlite-20260814-redteam.bak`）、P2 分组不区分收支方向、批量确认审计事件关联错误、概览非法 ym 500；规格与手册 6 处失实表述已对齐 | `docs/reports/24_full_red_team_review_2026-08-14.md` |
 | 当前产品面 | ✅ 全新 v2 页面已上线（旧路由已下线）；维护页与 status 路由已移除 | `app/main.py`、`templates/base.html` |
 | Inbox UX 优化 | ✅ 通过：HTMX 局部刷新（消除整页重载闪烁与跳顶）、退款无候选指引与候选刷新路由、界面紧凑化；业务规则零变更 | `docs/reports/25_inbox_ux_optimization_2026-08-27.md` |
-| 测试基线 | ✅ 直接 `pytest` 273 项通过（270 基线 + Inbox UX 新增 3 项）；局部刷新片段、OOB 计数、退款候选刷新闭环已验证 | `docs/reports/25_inbox_ux_optimization_2026-08-27.md` |
+| Inbox 滚动性能 | ✅ 通过：高风险区分页（243→20/页）消除滚动卡顿、渐变简化与 content-visibility 渲染优化 | `docs/reports/26_inbox_scroll_performance_2026-08-27.md` |
+| 测试基线 | ✅ 直接 `pytest` 274 项通过（273 基线 + 高风险区分页 1 项）；局部刷新、OOB 计数、退款候选刷新、分页翻页闭环已验证 | `docs/reports/25` / `docs/reports/26` |
 
 （✅=已通过 🔄=进行中 ⏳=待执行）
 

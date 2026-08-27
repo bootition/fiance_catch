@@ -47,8 +47,28 @@ WITHDRAWAL_PURPOSE_LABELS = {
 }
 
 
-def _high_risk_items(db_path) -> list[dict]:
+RISK_PER_PAGE = 20
+
+
+def _high_risk_items(db_path, *, page: int = 1, per_page: int = RISK_PER_PAGE) -> tuple[list[dict], int]:
+    """分页查询高风险待办。只对当前页的退款项计算候选（避免整表算候选）。
+
+    返回 (items, total)。
+    """
+    safe_page = max(1, int(page))
+    safe_per_page = max(1, min(int(per_page), 100))
+    offset = (safe_page - 1) * safe_per_page
     with connect(db_path) as conn:
+        total = int(
+            conn.execute(
+                """
+                SELECT COUNT(*) AS c
+                FROM review_queue AS rq
+                WHERE rq.status = 'pending'
+                  AND rq.reason IN ('refund_pending','withdrawal','person_transfer','other_neutral')
+                """
+            ).fetchone()["c"]
+        )
         rows = conn.execute(
             """
             SELECT
@@ -68,7 +88,9 @@ def _high_risk_items(db_path) -> list[dict]:
             WHERE rq.status = 'pending'
               AND rq.reason IN ('refund_pending','withdrawal','person_transfer','other_neutral')
             ORDER BY rq.priority DESC, st.occurred_at DESC
-            """
+            LIMIT ? OFFSET ?
+            """,
+            (safe_per_page, offset),
         ).fetchall()
         items = [dict(row) for row in rows]
         for item in items:
@@ -76,7 +98,40 @@ def _high_risk_items(db_path) -> list[dict]:
                 item["candidates"] = _refund_candidates(
                     db_path, int(item["source_id"])
                 )
-        return items
+        return items, total
+
+
+def _risk_item(db_path, review_id: int) -> dict | None:
+    """单条高风险待办查询（含退款候选），供候选刷新路由使用。"""
+    with connect(db_path) as conn:
+        row = conn.execute(
+            """
+            SELECT
+              rq.id AS review_id,
+              rq.reason,
+              rq.priority,
+              st.id AS source_id,
+              st.platform,
+              st.source_txn_id,
+              st.occurred_at,
+              st.amount_cents,
+              st.counterparty,
+              st.item_desc,
+              st.direction
+            FROM review_queue AS rq
+            JOIN source_transactions AS st ON st.id = rq.source_transaction_id
+            WHERE rq.status = 'pending'
+              AND rq.id = ?
+              AND rq.reason IN ('refund_pending','withdrawal','person_transfer','other_neutral')
+            """,
+            (int(review_id),),
+        ).fetchone()
+    if row is None:
+        return None
+    item = dict(row)
+    if item["reason"] == "refund_pending":
+        item["candidates"] = _refund_candidates(db_path, int(item["source_id"]))
+    return item
 
 
 def _refund_candidates(db_path, source_id: int) -> list[dict]:
@@ -106,14 +161,23 @@ def _pending_count() -> int:
         )
 
 
-def _inbox_context(request: Request, flash: str | None) -> dict:
+def _inbox_context(request: Request, flash: str | None, risk_page: int = 1) -> dict:
     settings = current_settings()
+    items, risk_total = _high_risk_items(settings.db_path, page=risk_page)
+    risk_total_pages = max(1, (risk_total + RISK_PER_PAGE - 1) // RISK_PER_PAGE)
+    # 当前页处理完后可能超出总页数，回退到有效页
+    if risk_page > risk_total_pages:
+        risk_page = risk_total_pages
+        items, risk_total = _high_risk_items(settings.db_path, page=risk_page)
     return {
         "request": request,
         "active_page": "inbox",
         "pending_count": _pending_count(),
-        "high_risk": _high_risk_items(settings.db_path),
+        "high_risk": items,
         "high_risk_labels": HIGH_RISK_LABELS,
+        "risk_page": risk_page,
+        "risk_total": risk_total,
+        "risk_total_pages": risk_total_pages,
         "groups": group_review_items(settings.db_path),
         "type_labels": TYPE_LABELS,
         "direction_labels": DIRECTION_LABELS,
@@ -125,10 +189,16 @@ def _inbox_context(request: Request, flash: str | None) -> dict:
 
 
 @router.get("/inbox", response_class=HTMLResponse)
-def inbox(request: Request):
+def inbox(request: Request, risk_page: int = 1):
     return templates.TemplateResponse(
-        request, "inbox.html", _inbox_context(request, None)
+        request, "inbox.html", _inbox_context(request, None, risk_page)
     )
+
+
+@router.get("/inbox/high-risk", response_class=HTMLResponse)
+def inbox_high_risk(request: Request, page: int = 1):
+    """高风险区翻页局部刷新：仅返回高风险区 section。"""
+    return _section_response(request, "_high_risk_section.html", None, page)
 
 
 def _pending_badge_oob() -> str:
@@ -140,9 +210,9 @@ def _pending_badge_oob() -> str:
     )
 
 
-def _section_response(request: Request, template_name: str, flash: str | None) -> HTMLResponse:
+def _section_response(request: Request, template_name: str, flash: str | None, risk_page: int = 1) -> HTMLResponse:
     """渲染局部片段（section / 卡片）+ 追加待确认计数 OOB 片段。"""
-    context = _inbox_context(request, flash)
+    context = _inbox_context(request, flash, risk_page)
     body = templates.env.get_template(template_name).render(context)
     return HTMLResponse(body + _pending_badge_oob())
 
@@ -150,9 +220,7 @@ def _section_response(request: Request, template_name: str, flash: str | None) -
 @router.get("/inbox/refund-candidates/{review_id}", response_class=HTMLResponse)
 def inbox_refund_candidates(request: Request, review_id: int):
     """单条退款卡片刷新：重新查询 90 天窗口候选；待办已处理则返回空片段（卡片被移除）。"""
-    settings = current_settings()
-    items = _high_risk_items(settings.db_path)
-    item = next((i for i in items if i["review_id"] == review_id), None)
+    item = _risk_item(current_settings().db_path, review_id)
     if item is None:
         return HTMLResponse("")
     context = {**_inbox_context(request, None), "item": item}
@@ -168,6 +236,7 @@ async def inbox_confirm(
     direction: str = Form("expense"),
     entry_type: str = Form(...),
     category: str = Form(...),
+    risk_page: int = Form(1),
 ):
     settings = current_settings()
     try:
@@ -189,7 +258,7 @@ async def inbox_confirm(
         )
     except ValueError as exc:
         flash = f"批量确认失败：{exc}"
-    return _section_response(request, "_category_section.html", flash)
+    return _section_response(request, "_category_section.html", flash, risk_page)
 
 
 @router.post("/inbox/refund/link", response_class=HTMLResponse)
@@ -198,6 +267,7 @@ async def inbox_refund_link(
     refund_source_id: int = Form(...),
     original_ledger_id: int = Form(...),
     review_id: int = Form(...),
+    risk_page: int = Form(1),
 ):
     settings = current_settings()
     try:
@@ -210,7 +280,7 @@ async def inbox_refund_link(
         )
     except ValueError as exc:
         flash = f"退款关联失败：{exc}"
-    return _section_response(request, "_high_risk_section.html", flash)
+    return _section_response(request, "_high_risk_section.html", flash, risk_page)
 
 
 @router.post("/inbox/resolve", response_class=HTMLResponse)
@@ -220,6 +290,7 @@ async def inbox_resolve(
     entry_type: str = Form(""),
     category: str = Form(""),
     purpose: str = Form(""),
+    risk_page: int = Form(1),
 ):
     settings = current_settings()
     try:
@@ -233,4 +304,4 @@ async def inbox_resolve(
         flash = f"已定性 #{result.entry_id}（{HIGH_RISK_LABELS.get(result.reason, result.reason)}）"
     except ValueError as exc:
         flash = f"处理失败：{exc}"
-    return _section_response(request, "_high_risk_section.html", flash)
+    return _section_response(request, "_high_risk_section.html", flash, risk_page)

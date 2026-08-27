@@ -33,10 +33,7 @@ body {
     margin: 0;
     min-height: 100vh;
     color: var(--ink);
-    background:
-        radial-gradient(1200px 560px at 0 -10%, rgba(53, 125, 187, 0.45) 0%, transparent 60%),
-        radial-gradient(980px 500px at 100% -20%, rgba(20, 61, 95, 0.48) 0%, transparent 58%),
-        linear-gradient(180deg, var(--bg-top) 0%, var(--bg-mid) 34%, var(--bg-floor) 34%, var(--bg-floor) 100%);
+    background: linear-gradient(180deg, var(--bg-top) 0%, var(--bg-mid) 30%, var(--bg-floor) 30%, var(--bg-floor) 100%);
 }
 
 .container {
@@ -131,6 +128,8 @@ h3 {
     border-color: #dfe7f2;
     box-shadow: none;
     padding: 12px 14px;
+    content-visibility: auto;
+    contain-intrinsic-size: auto 150px;
 }
 
 .card-inner .section-head {
@@ -164,6 +163,18 @@ h3 {
     align-items: flex-start;
     gap: 12px;
     margin-top: 8px;
+}
+
+.pagination {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 12px 0 4px;
+}
+
+.pagination-info {
+    color: var(--ink-soft);
+    font-size: 13px;
 }
 
 .refund-hint .note-text {
