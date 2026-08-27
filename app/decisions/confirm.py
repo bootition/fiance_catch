@@ -19,6 +19,7 @@ from .constants import (
     DIRECTION_ALLOWED_BULK_TYPES,
     REASON_OBSERVING_RULE,
     REASON_UNMATCHED,
+    TRANSFER_CATEGORIES,
     TYPE_TRANSFER,
 )
 
@@ -76,7 +77,8 @@ def _validate_confirm_choice(direction: str, entry_type: str, category: str) -> 
         label = {"income": "收入", "expense": "支出", "neutral": "不计收支"}.get(direction, direction)
         raise ValueError(f"{label}方向的交易不能确认为该类型")
     if entry_type == TYPE_TRANSFER:
-        category = ""
+        if category not in TRANSFER_CATEGORIES:
+            raise ValueError("调拨必须选择调拨专用分类（攒股收息/哈利布朗/虚拟货币/CS饰品）")
     elif not category:
         raise ValueError("消费/收入必须选择分类")
     return category

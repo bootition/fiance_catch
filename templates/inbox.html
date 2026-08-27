@@ -19,17 +19,16 @@
             group.disabled = group.dataset.forType !== entryType;
         });
 
-        if (entryType === 'transfer') {
+        catSelect.required = true;
+        var allowed = Array.prototype.slice.call(
+            catSelect.querySelectorAll('optgroup[data-for-type="' + entryType + '"] option')
+        ).map(function (option) { return option.value; });
+        if (allowed.length && allowed.indexOf(catSelect.value) === -1) {
+            catSelect.value = allowed[0];
+        }
+        if (!allowed.length) {
             catSelect.value = '';
             catSelect.required = false;
-        } else {
-            catSelect.required = true;
-            var allowed = Array.prototype.slice.call(
-                catSelect.querySelectorAll('optgroup[data-for-type="' + entryType + '"] option')
-            ).map(function (option) { return option.value; });
-            if (allowed.length && allowed.indexOf(catSelect.value) === -1) {
-                catSelect.value = allowed[0];
-            }
         }
     }
 

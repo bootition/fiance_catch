@@ -286,8 +286,8 @@ def test_inbox_pagination_has_page_numbers_and_jump_controls(client):
     assert "pagination-jump" in cat_page1.text
 
 
-def test_inbox_transfer_confirm_does_not_require_category(client):
-    """调拨批量确认允许分类为空（PRD：调拨不计分类），服务端把分类清空。"""
+def test_inbox_transfer_confirm_requires_transfer_category(client):
+    """调拨使用独立分类，必须选择攒股收息/哈利布朗/虚拟货币/CS饰品之一。"""
     from app.ledger_repo import create_classification_rule
 
     c, settings = client
@@ -312,7 +312,7 @@ def test_inbox_transfer_confirm_does_not_require_category(client):
             "platform": "alipay",
             "direction": "expense",
             "entry_type": "transfer",
-            "category": "",
+            "category": "攒股收息",
         },
     )
     assert response.status_code == 200

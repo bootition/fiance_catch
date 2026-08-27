@@ -46,6 +46,8 @@ def matches_builtin_transport(source) -> str | None:
             return pattern
     if counterparty.endswith("出行"):
         return "counterparty:出行"
+    if "青桔" in counterparty or "青桔" in item_desc:
+        return "青桔"
     return None
 
 

@@ -33,6 +33,11 @@
                 <option value="{{ cat }}" {% if item.suggested_type == "income" and item.suggested_category == cat %}selected{% endif %}>{{ cat }}</option>
             {% endfor %}
         </optgroup>
+        <optgroup label="调拨分类" data-for-type="transfer">
+            {% for cat in category_options_by_type["transfer"] %}
+                <option value="{{ cat }}" {% if item.suggested_type == "transfer" and item.suggested_category == cat %}selected{% endif %}>{{ cat }}</option>
+            {% endfor %}
+        </optgroup>
     </select>
     <button type="submit" class="secondary" hx-disabled-elt="this">确认此笔</button>
 </form>
