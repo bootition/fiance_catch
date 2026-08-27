@@ -35,6 +35,7 @@ def _passes_rules(conn, source) -> bool:
         source["item_desc"],
         platform=source["platform"],
         direction=source["direction"],
+        raw_type=source["raw_type"],
     )
     return rule is not None and rule["status"] == RULE_STATUS_ACTIVE
 
@@ -126,7 +127,12 @@ def apply_active_rules_to_pending(db_path) -> int:
                     continue
                 if str(rule["direction"] or "") not in ("", source["direction"]):
                     continue
-                if not _rule_matches(rule, source["counterparty"], source["item_desc"]):
+                if not _rule_matches(
+                    rule,
+                    source["counterparty"],
+                    source["item_desc"],
+                    source["raw_type"],
+                ):
                     continue
                 matched = rule
                 break

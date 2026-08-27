@@ -24,7 +24,7 @@ STATUS_LABELS = {
     "disabled": "已停用",
 }
 TYPE_LABELS = {"consumption": "消费", "income": "收入", "transfer": "调拨"}
-FIELD_LABELS = {"counterparty": "商户/对方", "item_desc": "商品说明"}
+FIELD_LABELS = {"counterparty": "商户/对方", "item_desc": "商品说明", "raw_type": "原始交易分类"}
 PLATFORM_LABELS = {"": "全部平台", "alipay": "支付宝", "wechat": "微信"}
 DIRECTION_RULE_LABELS = {"": "全部方向", "expense": "支出", "income": "收入", "neutral": "不计收支"}
 
@@ -89,7 +89,7 @@ def rules_create(
     target_category: str = Form(""),
 ):
     settings = current_settings()
-    if match_field not in ("counterparty", "item_desc"):
+    if match_field not in ("counterparty", "item_desc", "raw_type"):
         return _render(settings, request, "创建失败：无效匹配字段")
     if platform not in PLATFORM_LABELS:
         return _render(settings, request, "创建失败：无效平台条件")

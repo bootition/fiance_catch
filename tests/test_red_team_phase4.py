@@ -257,7 +257,7 @@ def test_migration_v4_cleans_duplicate_refund_links(tmp_path):
         version = conn.execute(
             "SELECT value FROM schema_meta WHERE key = 'schema_version'"
         ).fetchone()
-        assert version["value"] == "6"
+        assert version["value"] == "7"
         links = conn.execute("SELECT * FROM refund_links").fetchall()
         assert len(links) == 1  # 保留最早一条
         assert int(links[0]["original_ledger_id"]) == 1

@@ -6,7 +6,7 @@ from .settings import Settings
 
 LEDGER_V2_MARKER = "ledger_v2_init_at"
 SCHEMA_VERSION_KEY = "schema_version"
-SCHEMA_VERSION = 6  # 5 = 审计事件类型扩展；6 = 规则平台/方向条件 + bulk_reopen 审计
+SCHEMA_VERSION = 7  # 6 = 规则平台/方向条件；7 = 规则可匹配原始交易分类 raw_type
 
 
 def _connect(db_path: str | Path):
@@ -153,7 +153,7 @@ def init_new_schema(conn: sqlite3.Connection) -> None:
         """
         CREATE TABLE IF NOT EXISTS classification_rules (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
-          match_field TEXT NOT NULL CHECK(match_field IN ('counterparty','item_desc')),
+          match_field TEXT NOT NULL CHECK(match_field IN ('counterparty','item_desc','raw_type')),
           match_pattern TEXT NOT NULL CHECK(TRIM(match_pattern) <> ''),
           platform TEXT NOT NULL DEFAULT '' CHECK(platform IN ('','alipay','wechat')),
           direction TEXT NOT NULL DEFAULT '' CHECK(direction IN ('','expense','income','neutral')),
@@ -265,6 +265,19 @@ def _classification_rules_has_blank_check(conn: sqlite3.Connection) -> bool:
     return "trim(match_pattern)<>''" in normalized
 
 
+def _classification_rules_has_raw_type_field(conn: sqlite3.Connection) -> bool:
+    row = conn.execute(
+        """
+        SELECT sql FROM sqlite_master
+        WHERE type = 'table' AND name = 'classification_rules'
+        """
+    ).fetchone()
+    if row is None or row["sql"] is None:
+        return False
+    normalized = "".join(str(row["sql"]).lower().split())
+    return "'raw_type'" in normalized
+
+
 def _rebuild_classification_rules(conn: sqlite3.Connection) -> int:
     """重建 classification_rules 以加入空模式 CHECK。
 
@@ -284,7 +297,7 @@ def _rebuild_classification_rules(conn: sqlite3.Connection) -> int:
         """
         CREATE TABLE classification_rules (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
-          match_field TEXT NOT NULL CHECK(match_field IN ('counterparty','item_desc')),
+          match_field TEXT NOT NULL CHECK(match_field IN ('counterparty','item_desc','raw_type')),
           match_pattern TEXT NOT NULL CHECK(TRIM(match_pattern) <> ''),
           platform TEXT NOT NULL DEFAULT '' CHECK(platform IN ('','alipay','wechat')),
           direction TEXT NOT NULL DEFAULT '' CHECK(direction IN ('','expense','income','neutral')),
@@ -518,12 +531,13 @@ def _migrate_v2_schema(conn: sqlite3.Connection) -> None:
     v5：entry_audit_events 事件类型扩展（high_risk_resolved）
     v6：classification_rules 增加 platform/direction 条件，修复脱敏商户规则；
         entry_audit_events 增加 bulk_reopen（退回待确认）
+    v7：classification_rules.match_field 允许 raw_type（原始交易分类）
     """
     current = _current_schema_version(conn)
     if current is not None and current >= SCHEMA_VERSION:
         return
     _ensure_v2_columns(conn)
-    if not _classification_rules_has_blank_check(conn):
+    if not _classification_rules_has_blank_check(conn) or not _classification_rules_has_raw_type_field(conn):
         dropped = _rebuild_classification_rules(conn)
         if dropped > 0:
             conn.execute(

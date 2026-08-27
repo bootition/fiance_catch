@@ -36,9 +36,10 @@
             <select name="match_field" required>
                 <option value="counterparty">商户/交易对方</option>
                 <option value="item_desc">商品/商品说明</option>
+                <option value="raw_type">原始交易分类</option>
             </select>
         </label>
-        <label>匹配内容 <input type="text" name="match_pattern" placeholder="如：美团外卖 / 闲鱼虚拟资料" required></label>
+        <label>匹配内容 <input type="text" name="match_pattern" placeholder="如：美团外卖 / 闲鱼虚拟资料 / 收入" required></label>
         <p class="note-text full-width">建议优先用「商品/商品说明」建立规则；支付宝脱敏商户名（含 `*`）不能作为规则条件。</p>
         <label>
             平台条件

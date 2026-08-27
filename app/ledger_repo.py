@@ -681,7 +681,7 @@ def _create_classification_rule(
     pattern = (match_pattern or "").strip()
     if not pattern:
         raise ValueError("match_pattern required")
-    if match_field not in ("counterparty", "item_desc"):
+    if match_field not in ("counterparty", "item_desc", "raw_type"):
         raise ValueError("invalid match_field")
     if platform not in ("", "alipay", "wechat"):
         raise ValueError("invalid rule platform")

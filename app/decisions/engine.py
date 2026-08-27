@@ -160,6 +160,7 @@ def process_source(conn, source) -> str:
         source["item_desc"],
         platform=source["platform"],
         direction=source["direction"],
+        raw_type=source["raw_type"],
     )
     # 旅游类规则永不自动入账（规格 §2.2：旅游必须用户确认），
     # 即使存在 active 旅游规则也按观察期预填处理，命中照常计数（红队修复 2026-08-14）

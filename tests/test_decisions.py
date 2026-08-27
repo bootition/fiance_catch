@@ -621,3 +621,28 @@ def test_masked_counterparty_cannot_create_manual_rule(db):
             target_type=TYPE_INCOME,
             target_category=CATEGORY_SIDE_INCOME,
         )
+
+
+def test_raw_type_rule_auto_posts_alipay_income(db, tmp_path):
+    """规则可匹配原始交易分类：支付宝收入（闲鱼收款）→ 副业收入。"""
+    rule_id = create_classification_rule(
+        db,
+        match_field="raw_type",
+        match_pattern="收入",
+        platform="alipay",
+        direction="income",
+        target_type=TYPE_INCOME,
+        target_category=CATEGORY_SIDE_INCOME,
+    )
+    promote_rule(db, rule_id)
+    result = _import_rows(
+        db,
+        tmp_path,
+        ["2026-07-31 12:00:00,收入,****3,155******65,闲鱼虚拟资料订单,收入,30.00,,交易成功,TXN-RT-1,,"],
+    )
+    processed = process_batch(db, result.batch_id)
+    assert processed.posted == 1
+    assert list_review_queue(db) == []
+    entry = list_ledger_entries(db)[0]
+    assert entry["entry_type"] == TYPE_INCOME
+    assert entry["category"] == CATEGORY_SIDE_INCOME

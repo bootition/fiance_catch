@@ -15,9 +15,16 @@ def _text_contains(value: str, pattern: str) -> bool:
     return pattern in value
 
 
-def _rule_matches(rule, counterparty: str, item_desc: str) -> bool:
+def _rule_matches(
+    rule,
+    counterparty: str,
+    item_desc: str,
+    raw_type: str = "",
+) -> bool:
     if rule["match_field"] == "counterparty":
         return _text_contains(counterparty, rule["match_pattern"])
+    if rule["match_field"] == "raw_type":
+        return _text_contains(raw_type, rule["match_pattern"])
     return _text_contains(item_desc, rule["match_pattern"])
 
 
@@ -28,6 +35,7 @@ def match_rules(
     target_category: str = "",
     platform: str = "",
     direction: str = "",
+    raw_type: str = "",
 ):
     """按优先级返回最匹配的启用规则；无命中返回 None。
 
@@ -49,7 +57,7 @@ def match_rules(
         (platform, direction),
     ).fetchall()
     for rule in rows:
-        if not _rule_matches(rule, counterparty, item_desc):
+        if not _rule_matches(rule, counterparty, item_desc, raw_type):
             continue
         if target_category and rule["target_category"] != target_category:
             continue
