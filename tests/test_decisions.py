@@ -250,19 +250,20 @@ def test_process_batch_refund_queued(db, tmp_path):
     assert _list_ledger(db) == []
 
 
-def test_process_batch_unmatched_income_suggests_side_income(db, tmp_path):
+def test_process_batch_alipay_masked_income_auto_posts_side_income(db, tmp_path):
     result = _import_rows(
         db,
         tmp_path,
         [
-            "2026-07-31 12:00:00,收入,****3,155******65,闲鱼虚拟资料订单,收入,1.29,,交易成功,TXN-SI1,,",
+            "2026-07-31 12:00:00,收入,****3,155******65,猴博士大学课程合集涵盖高等数学,收入,1.29,,交易成功,TXN-SI1,,",
         ],
     )
-    process_batch(db, result.batch_id)
-    item = list_review_queue(db)[0]
-    assert item["reason"] == "unmatched"
-    assert item["suggested_category"] == CATEGORY_SIDE_INCOME
-    assert item["suggested_type"] == TYPE_INCOME
+    processed = process_batch(db, result.batch_id)
+    assert processed.posted == 1
+    assert list_review_queue(db) == []
+    entry = list_ledger_entries(db)[0]
+    assert entry["entry_type"] == TYPE_INCOME
+    assert entry["category"] == CATEGORY_SIDE_INCOME
 
 
 def test_process_batch_idempotent_rerun(db, tmp_path):
@@ -575,19 +576,19 @@ def test_travel_rule_disabled_then_activate_refused(db, tmp_path):
 
 
 def test_masked_counterparty_group_confirms_without_rule(db, tmp_path):
-    """脱敏商户（含 *）不能成为规则条件；自动规则改按商品说明并固化平台/方向。"""
+    """脱敏商户（含 *）不能成为规则条件；批量确认不再自动生成规则。"""
     result = _import_rows(
         db,
         tmp_path,
         [
-            "2026-07-01 10:00:00,收入,****0,/,闲鱼虚拟资料,收入,10.00,余额宝,交易成功,TXN-MR-1,,",
-            "2026-07-02 10:00:00,收入,****0,/,闲鱼虚拟资料,收入,20.00,余额宝,交易成功,TXN-MR-2,,",
+            "2026-07-01 10:00:00,日用百货,x***2,/,普通商品,支出,10.00,余额宝,交易成功,TXN-MR-1,,",
+            "2026-07-02 10:00:00,日用百货,x***2,/,普通商品,支出,20.00,余额宝,交易成功,TXN-MR-2,,",
         ],
     )
     process_batch(db, result.batch_id)
     confirmed = confirm_group(
-        db, "****0", "alipay", direction="income",
-        entry_type=TYPE_INCOME, category=CATEGORY_SIDE_INCOME,
+        db, "x***2", "alipay", direction="expense",
+        entry_type=TYPE_CONSUMPTION, category=CATEGORY_DAILY_MEALS,
     )
     assert confirmed.rule_id is None  # 脱敏商户不再自动生成规则
     assert list_classification_rules(db) == []

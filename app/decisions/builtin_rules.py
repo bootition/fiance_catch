@@ -49,12 +49,43 @@ def matches_builtin_transport(source) -> str | None:
     return None
 
 
-def _post_builtin(conn, source, review_id, pattern: str) -> int:
+def matches_builtin_side_income(source) -> str | None:
+    """闲鱼收入识别（比“支付宝所有收入”更严格）。
+
+    只认两类高置信形态：
+    - 支付宝收入方向 + 交易对方被平台脱敏（含 `*`）——C2C 买家形态
+    - 已知副业来源商户（如 网易BUFF卖家）
+    公司/机构发来的工资、报销等 unmasked 收入不会命中，留给用户确认。
+    """
+    if source["platform"] != "alipay" or source["direction"] != "income":
+        return None
+    raw_type = str(source["raw_type"] or "")
+    if raw_type.strip() != "收入":
+        return None
+    counterparty = str(source["counterparty"] or "")
+    item_desc = str(source["item_desc"] or "")
+    if "*" in counterparty and len(item_desc.strip()) >= 10:
+        return "masked_counterparty"
+    if counterparty in ("网易BUFF卖家",):
+        return "known_counterparty"
+    return None
+
+
+def _post_builtin(
+    conn,
+    source,
+    review_id,
+    pattern: str,
+    *,
+    entry_type: str = TYPE_CONSUMPTION,
+    category: str = CATEGORY_TRANSPORT,
+    match_field: str = "item_desc",
+) -> int:
     entry_id = _create_ledger_entry(
         conn,
-        entry_type=TYPE_CONSUMPTION,
+        entry_type=entry_type,
         amount_cents=source["amount_cents"],
-        category=CATEGORY_TRANSPORT,
+        category=category,
         txn_date=source["occurred_at"][:10],
         source_transaction_id=source["id"],
         batch_id=source["batch_id"],
@@ -75,7 +106,7 @@ def _post_builtin(conn, source, review_id, pattern: str) -> int:
         event_type="rule_applied",
         ref_ledger_id=entry_id,
         ref_batch_id=source["batch_id"],
-        detail=f"builtin:1;field:item_desc;pattern:{pattern}",
+        detail=f"builtin:1;field:{match_field};pattern:{pattern}",
     )
     return entry_id
 
@@ -123,10 +154,23 @@ def apply_builtin_rules_to_pending(db_path) -> BuiltinApplyResult:
         for row in rows:
             source = dict(row)
             pattern = matches_builtin_transport(source)
-            if pattern is None:
+            if pattern is not None:
+                _post_builtin(conn, source, source["review_id"], pattern)
+                _sync_batch_pending(conn, source["batch_id"])
+                posted += 1
                 continue
-            _post_builtin(conn, source, source["review_id"], pattern)
-            _sync_batch_pending(conn, source["batch_id"])
-            posted += 1
+            side_income_pattern = matches_builtin_side_income(source)
+            if side_income_pattern is not None:
+                _post_builtin(
+                    conn,
+                    source,
+                    source["review_id"],
+                    side_income_pattern,
+                    entry_type=TYPE_INCOME,
+                    category=CATEGORY_SIDE_INCOME,
+                    match_field="side_income",
+                )
+                _sync_batch_pending(conn, source["batch_id"])
+                posted += 1
         conn.commit()
         return BuiltinApplyResult(posted=posted)

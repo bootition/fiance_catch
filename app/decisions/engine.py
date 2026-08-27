@@ -20,7 +20,7 @@ from ..ledger_repo import (
     _enqueue_review,
     _update_batch_counts,
 )
-from .builtin_rules import matches_builtin_transport
+from .builtin_rules import matches_builtin_side_income, matches_builtin_transport
 from .constants import (
     CATEGORY_SIDE_INCOME,
     CATEGORY_TRAVEL,
@@ -228,6 +228,27 @@ def process_source(conn, source) -> str:
             ref_ledger_id=entry_id,
             ref_batch_id=source["batch_id"],
             detail=f"builtin:1;field:item_desc;pattern:{builtin_pattern}",
+        )
+        return ACTION_POSTED
+
+    side_income_pattern = matches_builtin_side_income(source)
+    if side_income_pattern is not None:
+        entry_id = _create_ledger_entry(
+            conn,
+            entry_type=TYPE_INCOME,
+            amount_cents=source["amount_cents"],
+            category=CATEGORY_SIDE_INCOME,
+            txn_date=source["occurred_at"][:10],
+            source_transaction_id=source["id"],
+            batch_id=source["batch_id"],
+            note="",
+        )
+        _add_audit_event(
+            conn,
+            event_type="rule_applied",
+            ref_ledger_id=entry_id,
+            ref_batch_id=source["batch_id"],
+            detail=f"builtin:1;field:side_income;pattern:{side_income_pattern}",
         )
         return ACTION_POSTED
 
