@@ -14,11 +14,11 @@ last-reviewed: 2026-08-27
 
 | 页面 | 路由 | 说明 |
 |---|---|---|
-| 本月概览 | `/` | 关键指标、日常消费环比、消费分类排行 |
+| 概览 | `/` | 周/月/年切换、自由选期、关键指标、日常消费环比、消费分类排行 |
 | 账单导入 | `/imports/new` | 支付宝 CSV / 微信 XLSX 单文件上传与处理结果 |
 | 待确认 | `/inbox` | 高风险区逐笔处理 + 分类区按组批量确认；分页、搜索、页码跳页 |
-| 流水 | `/transactions` | 筛选、简易补账、列表；详情 `/transactions/{id}` |
-| 规则 | `/rules` | 观察/自动/停用规则与命中历史 |
+| 流水 | `/transactions` | 日期/类型/分类/平台/批次/来源状态/关键词筛选、简易补账、退回待确认；详情 `/transactions/{id}` |
+| 规则 | `/rules` | 匹配字段 + 平台 + 方向条件，观察/自动/停用规则、命中历史、批量退回确认流水 |
 | 批次 | `/imports` | 导入历史、撤销与阻塞项展示 |
 
 ## Runtime Model
@@ -26,7 +26,7 @@ last-reviewed: 2026-08-27
 - Backend: FastAPI
 - Templates: Jinja2（`app/templates_core.py` 注册模板环境与分页窗口 helper）
 - Partial interactivity: HTMX 1.9.12（CDN，本地化是后续优化项）
-- Storage: SQLite at project-root `.data/ledger.sqlite`（schema v5）
+- Storage: SQLite at project-root `.data/ledger.sqlite`（schema v6）
 
 ## Domain Shape
 
@@ -38,7 +38,7 @@ last-reviewed: 2026-08-27
 
 ### Review queue
 
-- `app/decisions/confirm.py`：分类区按 `商户 × 平台 × 收支方向` 分组、分页搜索、批量确认并建议观察期规则。
+- `app/decisions/confirm.py`：分类区按 `商户 × 平台 × 收支方向` 分组、分页搜索、批量确认并建议观察期规则；方向锁定类型，脱敏商户自动改按商品说明建规则。
 - `app/decisions/high_risk.py`：提现用途与人际/中性资金流逐笔定性。
 - `app/refunds/matching.py` + `app/refunds/linking.py`：退款候选匹配与受约束人工关联；跨期退款通过原消费 `txn_date` 回写统计。
 - `app/routers/inbox.py`：待确认页面与局部刷新路由（分区翻页/搜索、退款候选刷新、处理提交）。
@@ -47,12 +47,12 @@ last-reviewed: 2026-08-27
 
 - `app/ledger_repo.py`：账本/来源流水/待办/规则/审计的仓储层；退款不变量在写路径强制。
 - `app/stats.py`：概览净额统计（退款后口径）、流水筛选、正式分类候选。
-- `app/routers/transactions.py`：流水筛选（日期/类型/分类/平台/批次/来源状态/人工改动）、简易补账、详情、编辑与删除。
+- `app/routers/transactions.py`：流水筛选（日期/类型/分类/平台/批次/来源状态/关键词/人工改动）、简易补账、详情、编辑、退回待确认与删除。
 - `app/revoke.py` + `app/routers/imports.py`：安全批次撤销，阻塞项（已编辑/已退款关联）明确列出。
 
 ### Rules
 
-- `app/decisions/rules.py`：仅匹配商户/对方或商品说明；active 优先于 observing。
+- `app/decisions/rules.py`：按匹配字段 + 平台 + 方向匹配；active 优先于 observing。
 - 旅游类规则命中只预填且禁止提升为自动入账（规格 §2.2/§3.5）。
 
 ## Key Modules

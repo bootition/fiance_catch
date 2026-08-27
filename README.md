@@ -4,11 +4,11 @@ Desktop-first local ledger app built with FastAPI, Jinja2, HTMX, and SQLite.
 
 ## Current product surface
 
-- Monthly overview: `/`
+- Overview: `/` — week/month/year switching, free date jump, key metrics, daily-consumption trend, category ranking
 - Bill import: `/imports/new` (Alipay CSV / WeChat XLSX, original files never stored)
-- Pending review queue: `/inbox` — high-risk items resolved one by one (refund linking with candidates, withdrawal purpose, person-transfer classification); classification groups show description samples/times/details, search by merchant or description, and bulk-confirm with formal category options
+- Pending review queue: `/inbox` — high-risk items resolved one by one (refund linking with candidates, withdrawal purpose, person-transfer classification); classification groups show description samples/times/details, search by merchant or description, type locked to bill direction, and bulk-confirm with formal category options
 - Ledger entries: `/transactions` — filters, simple manual entry, detail page `/transactions/{id}` with source/batch/refund/audit traceability and editing
-- Classification rules: `/rules`
+- Classification rules: `/rules` — match field + platform + direction conditions, lifecycle controls, hit history, and bulk reopen of mistaken confirmations
 - Import batches and revocation: `/imports` — revoke lists blocked (edited/refund-linked) records explicitly
 
 `/review`, `/cleanup`, and `/export.csv` are legacy routes and are not part of the current product surface.
