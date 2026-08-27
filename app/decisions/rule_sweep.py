@@ -16,6 +16,8 @@ from .builtin_rules import (
     apply_builtin_rules_to_pending,
     matches_builtin_transport,
 )
+from ..refunds.linking import link_refund_to_ledger
+from ..refunds.matching import find_refund_candidates
 from .reopen import _reopen_entries
 from .rules import RULE_STATUS_ACTIVE, _rule_matches, match_rules
 
@@ -333,10 +335,42 @@ def apply_person_transfer_rules(db_path) -> int:
         return posted
 
 
+def auto_link_unambiguous_refunds(db_path) -> int:
+    """把只剩唯一候选的退款自动冲销原消费（用户指引 2026-08-28）。
+
+    只有候选唯一时才自动关联；多个候选仍需人工选择。
+    """
+    with connect(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT rq.id AS review_id, rq.source_transaction_id
+            FROM review_queue AS rq
+            WHERE rq.status = 'pending' AND rq.reason = 'refund_pending'
+            ORDER BY rq.id ASC
+            """
+        ).fetchall()
+    linked = 0
+    for row in rows:
+        candidates = find_refund_candidates(db_path, int(row["source_transaction_id"]))
+        if len(candidates) != 1:
+            continue
+        try:
+            link_refund_to_ledger(
+                db_path,
+                int(row["source_transaction_id"]),
+                int(candidates[0].ledger_id),
+            )
+            linked += 1
+        except ValueError:
+            continue
+    return linked
+
+
 def apply_all_rules_to_pending(db_path) -> int:
     """内置规则 + active 用户规则，全部应用到 unmatched 待确认。"""
     total = apply_builtin_rules_to_pending(db_path).posted
     total += apply_active_rules_to_pending(db_path)
     total += apply_transfer_rules_to_neutral_pending(db_path)
     total += apply_person_transfer_rules(db_path)
+    total += auto_link_unambiguous_refunds(db_path)
     return total

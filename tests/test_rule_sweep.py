@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 import app.main as main
 from app.db import connect, init_db
 from app.decisions.confirm import confirm_review_item
-from app.decisions.rule_sweep import apply_active_rules_to_pending, sweep_bulk_confirm_entries
+from app.decisions.rule_sweep import apply_active_rules_to_pending, auto_link_unambiguous_refunds, sweep_bulk_confirm_entries
 from app.ledger_repo import (
     _enqueue_review,
     _insert_source_transaction,
@@ -156,3 +156,21 @@ def test_apply_active_rules_to_pending(client):
     assert posted == 1
     assert list_review_queue(settings.db_path) == []
     assert len(list_ledger_entries(settings.db_path)) == 1
+
+
+def test_auto_link_unambiguous_refund(client):
+    """唯一候选的退款自动冲销原消费；不再要求人工逐笔关联。"""
+    c, settings = client
+    _upload(
+        c,
+        [
+            "2026-07-01 10:00:00,日用百货,某店,/,商品,支出,20.00,余额宝,交易成功,TXN-REF-A,,",
+            "2026-07-02 10:00:00,日用百货,某店,/,退款-商户单号X,不计收支,20.00,余额宝,退款成功,TXN-REF-A_RM1,,",
+        ],
+    )
+    _confirm(c, "某店", "expense", "consumption", "日常娱乐")
+    assert len(list_review_queue(settings.db_path)) == 1
+    linked = auto_link_unambiguous_refunds(settings.db_path)
+    assert linked == 1
+    pending = list_review_queue(settings.db_path)
+    assert all(r["reason"] != "refund_pending" for r in pending)
