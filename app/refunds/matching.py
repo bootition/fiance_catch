@@ -159,26 +159,30 @@ def _score(
     except ValueError:
         day_diff = 999999
 
-    if refund_amount == entry_amount:
-        if same_platform and day_diff == 0:
-            return 90, "同平台同金额同日匹配"
-        if same_platform and day_diff <= 3:
-            return 88, "同平台同金额时间相近匹配"
-        if same_platform and day_diff <= 7:
-            return 86, "同平台同金额一周内匹配"
-        if same_platform and counterparty and counterparty == refund_counterparty:
-            return 85, "同平台同商户金额匹配"
-        if same_platform:
-            return 80, "同平台金额匹配"
-        return 60, "金额匹配（跨平台）"
+    if not same_platform:
+        return 0, ""
 
-    # 退款金额大于原消费：仅当同平台且同商户（或极近时间）才作为覆盖候选
-    if entry_amount < refund_amount and same_platform:
-        same_counterparty = counterparty and counterparty == refund_counterparty
-        if same_counterparty and day_diff == 0:
-            return 78, "同平台同商户同日金额覆盖匹配"
-        if same_counterparty and day_diff <= 3:
-            return 76, "同平台同商户时间相近覆盖匹配"
-        if same_counterparty:
-            return 72, "同平台同商户金额覆盖匹配"
+    if refund_amount == entry_amount:
+        if day_diff == 0:
+            return 90, "同平台同金额同日匹配"
+        if day_diff <= 3:
+            return 88, "同平台同金额时间相近匹配"
+        if day_diff <= 7:
+            return 86, "同平台同金额一周内匹配"
+        if counterparty and counterparty == refund_counterparty:
+            return 85, "同平台同商户金额匹配"
+        return 80, "同平台金额匹配"
+
+    # 退款金额大于原消费：金额不同，直接排除（用户指引 2026-08-28）
+    if entry_amount < refund_amount:
+        return 0, ""
+
+    # 部分退款：退款金额小于原消费，允许同商户/时间相近的候选
+    same_counterparty = counterparty and counterparty == refund_counterparty
+    if same_counterparty and day_diff == 0:
+        return 78, "同平台同商户同日部分退款匹配"
+    if same_counterparty and day_diff <= 3:
+        return 76, "同平台同商户时间相近部分退款匹配"
+    if same_counterparty:
+        return 72, "同平台同商户部分退款匹配"
     return 0, ""

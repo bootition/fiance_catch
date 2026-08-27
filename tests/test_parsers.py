@@ -172,13 +172,13 @@ def test_wechat_normalizes_fields(tmp_path):
     assert income.note == "测试备注"
 
 
-def test_wechat_partial_refund_status(tmp_path):
+def test_wechat_partial_refund_expense_is_original(tmp_path):
     rows = [
         [datetime.datetime(2026, 7, 5, 8, 0, 0), "商户消费", "某店", "商品", "支出", 23.0, "零钱", "已退款(¥23.00)", "TXN-REFUND-PARTIAL", "M9", "/"],
     ]
     path = _build_wechat_xlsx(tmp_path, rows)
     parsed = parse_wechat_xlsx(path)
-    assert parsed[0].status == RowStatus.REFUND
+    assert parsed[0].status == RowStatus.SUCCESS  # 支出方向的部分退款状态属于原消费
     assert parsed[0].status_text == "已退款(¥23.00)"
 
 

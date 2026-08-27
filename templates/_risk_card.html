@@ -16,6 +16,8 @@
                 <input type="hidden" name="review_id" value="{{ item.review_id }}">
                 <input type="hidden" name="refund_source_id" value="{{ item.source_id }}">
                 <input type="hidden" name="risk_page" value="{{ risk_page }}">
+                <details class="refund-candidates">
+                <summary>展开候选（{{ item.candidates | length }} 条）</summary>
                 <div class="table-wrap">
                 <table class="risk-table">
                     <thead>
@@ -38,6 +40,7 @@
                 </table>
                 </div>
                 <button type="submit" class="primary-action" hx-disabled-elt="this">关联退款</button>
+                </details>
             </form>
         {% else %}
             <div class="refund-hint">

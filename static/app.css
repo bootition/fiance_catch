@@ -1055,3 +1055,11 @@ tbody tr:hover {
     flex: 0 0 auto;
     margin: 0;
 }
+
+.refund-candidates summary {
+    cursor: pointer;
+    color: var(--primary);
+    font-weight: 700;
+    font-size: 13px;
+    padding: 4px 0;
+}

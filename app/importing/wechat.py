@@ -144,6 +144,10 @@ def _normalize_row(cells: list) -> NormalizedTransaction:
 
     direction = DIRECTION_MAP.get(direction_raw, "neutral")
     status = _classify_status(status_text)
+    # 微信“已退款(¥23.00)”且方向=支出：这是部分退款后的原消费行，
+    # 不是退款流水本身；应保留为消费，退款由独立的收入退款行处理。
+    if direction == "expense" and status_text.startswith("已退款("):
+        status = RowStatus.SUCCESS
     normalized_hash = _normalized_hash(
         Platform.WECHAT.value,
         source_txn_id,
