@@ -122,11 +122,15 @@ def link_refund_to_ledger(
                 (original_ledger_id,),
             ).fetchone()["c"]
         )
-        if already + int(refund["amount_cents"]) > int(entry["amount_cents"]):
+        remaining = int(entry["amount_cents"]) - already
+        if remaining <= 0:
             raise ValueError(
                 "refund total exceeds original consumption amount "
-                f"({already} + {refund['amount_cents']} > {entry['amount_cents']})"
+                f"(remaining={remaining})"
             )
+        refund_amount = int(refund["amount_cents"])
+        effective_amount = min(refund_amount, remaining)
+        clamped = effective_amount != refund_amount
 
         review_id = int(review["id"])
         conn.execute(
@@ -144,23 +148,26 @@ def link_refund_to_ledger(
             conn,
             refund_source_id=refund_source_id,
             original_ledger_id=original_ledger_id,
-            refund_amount_cents=refund["amount_cents"],
+            refund_amount_cents=effective_amount,
         )
         _add_audit_event(
             conn,
             event_type="refund_linked",
             ref_ledger_id=original_ledger_id,
             ref_batch_id=refund["batch_id"],
-            detail=f"refund_source:{refund_source_id};amount:{refund['amount_cents']}",
+            detail=(
+                f"refund_source:{refund_source_id};amount:{refund_amount};"
+                f"effective:{effective_amount};clamped:{int(clamped)}"
+            ),
         )
         _sync_batch_pending(conn, refund["batch_id"])
         conn.commit()
 
-        new_total = already + int(refund["amount_cents"])
+        new_total = already + effective_amount
         return RefundLinkResult(
             refund_link_id=link_id,
             original_ledger_id=original_ledger_id,
-            refund_amount_cents=int(refund["amount_cents"]),
+            refund_amount_cents=effective_amount,
             net_cost_cents=int(entry["amount_cents"]) - new_total,
             review_id=review_id,
         )

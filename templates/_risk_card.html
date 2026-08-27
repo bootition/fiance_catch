@@ -1,13 +1,14 @@
 <div class="card card-inner risk-card" id="risk-{{ item.review_id }}">
-    <div class="risk-head">
-        <div>
-            <h3>{{ high_risk_labels.get(item.reason, item.reason) }}</h3>
-            <small>#{{ item.review_id }} · {{ "支付宝" if item.platform == "alipay" else "微信" }} · {{ item.occurred_at }}</small>
+    <div class="risk-main">
+        <div class="risk-info">
+            <div class="risk-head">
+                <h3>{{ high_risk_labels.get(item.reason, item.reason) }}</h3>
+                <span class="state-pill">{{ "%.2f"|format(item.amount_cents / 100) }} 元</span>
+            </div>
+            <p class="risk-meta">#{{ item.review_id }} · {{ "支付宝" if item.platform == "alipay" else "微信" }} · {{ item.occurred_at }} · {{ item.counterparty or "（无对方）" }} · {{ item.item_desc or "—" }} · {{ item.source_txn_id }}</p>
         </div>
-        <span class="state-pill">{{ "%.2f"|format(item.amount_cents / 100) }} 元</span>
-    </div>
-    <p class="risk-meta">{{ item.counterparty or "（无对方）" }} · {{ item.item_desc or "—" }} · {{ item.source_txn_id }}</p>
 
+    </div>
     {% if item.reason == "refund_pending" %}
         {% if item.candidates %}
             <form method="post" action="/inbox/refund/link"

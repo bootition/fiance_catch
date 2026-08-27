@@ -359,6 +359,8 @@ def auto_link_unambiguous_refunds(db_path) -> int:
         chosen = None
         if len(candidates) == 1:
             chosen = candidates[0]
+        elif candidates[0].score >= 90 and candidates[0].score > candidates[1].score:
+            chosen = candidates[0]
         elif candidates[0].score >= 80 and candidates[0].score - candidates[1].score >= 10:
             chosen = candidates[0]
         if chosen is None:
