@@ -15,7 +15,14 @@ from ..ledger_repo import (
 from .constants import CATEGORY_TRANSPORT, REASON_UNMATCHED, TYPE_CONSUMPTION
 
 # 用「地铁_」而不是「地铁」，避免把“XX地铁站旁奶茶店”误判成交通
-BUILTIN_TRANSPORT_ITEM_PATTERNS = ("地铁_", "单车", "骑行", "公交")
+BUILTIN_TRANSPORT_ITEM_PATTERNS = (
+    "地铁_",
+    "单车",
+    "骑行",
+    "公交",
+    "机票",
+    "火车票",
+)
 
 
 @dataclass(frozen=True)
@@ -25,13 +32,20 @@ class BuiltinApplyResult:
 
 
 def matches_builtin_transport(source) -> str | None:
-    """命中返回模式，否则 None。只匹配支出方向。"""
+    """命中返回模式，否则 None。只匹配支出方向。
+
+    - 商品说明关键词：地铁_ / 单车 / 骑行 / 公交 / 机票 / 火车票
+    - 商户名以「出行」结尾：滴滴出行、哈啰出行、曹操出行等打车软件
+    """
     if source["direction"] != "expense":
         return None
     item_desc = str(source["item_desc"] or "")
+    counterparty = str(source["counterparty"] or "")
     for pattern in BUILTIN_TRANSPORT_ITEM_PATTERNS:
         if pattern in item_desc:
             return pattern
+    if counterparty.endswith("出行"):
+        return "counterparty:出行"
     return None
 
 

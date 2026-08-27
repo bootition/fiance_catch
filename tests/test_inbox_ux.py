@@ -252,7 +252,7 @@ def test_inbox_category_rows_show_details_and_formal_category_options(client):
     # PRD §2.2 正式分类必须内置于下拉，而不是只有“选择分类”
     assert 'optgroup label="消费分类"' in text
     assert 'optgroup label="收入分类"' in text
-    for category in ("日常三餐", "出行交通", "书籍学习", "日常娱乐", "旅游", "日常缴费", "副业成本", "副业收入", "其他收入"):
+    for category in ("日常三餐", "出行交通", "书籍学习", "日常娱乐", "旅游", "日常缴费", "医疗健康", "副业成本", "副业收入", "其他收入"):
         assert f'<option value="{category}"' in text
 
 

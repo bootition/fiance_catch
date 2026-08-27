@@ -49,11 +49,14 @@ def test_builtin_transport_rules_auto_post_new_import(client):
             "2026-07-01 08:00:00,出行交通,北京地铁,/,地铁_西二旗_沙河,支出,5.00,余额宝,交易成功,TXN-BT-METRO,,",
             "2026-07-02 08:00:00,出行交通,美团,/,美团订单-美团骑行-单车-骑行费,支出,1.50,余额宝,交易成功,TXN-BT-BIKE,,",
             "2026-07-03 08:00:00,出行交通,某公交公司,/,公交-乘车,支出,1.00,余额宝,交易成功,TXN-BT-BUS,,",
-            "2026-07-04 08:00:00,餐饮美食,美团,/,蜜雪冰城（沙河地铁站松兰路店）,支出,9.10,余额宝,交易成功,TXN-BT-TEA,,",
+            "2026-07-04 08:00:00,出行交通,某航司,/,机票订单,支出,800.00,余额宝,交易成功,TXN-BT-FLIGHT,,",
+            "2026-07-05 08:00:00,出行交通,12306,/,火车票,支出,100.00,余额宝,交易成功,TXN-BT-TRAIN,,",
+            "2026-07-06 08:00:00,出行交通,滴滴出行,/,特惠快车,支出,20.00,余额宝,交易成功,TXN-BT-DIDI,,",
+            "2026-07-07 08:00:00,餐饮美食,美团,/,蜜雪冰城（沙河地铁站松兰路店）,支出,9.10,余额宝,交易成功,TXN-BT-TEA,,",
         ],
     )
     entries = list_ledger_entries(settings.db_path)
-    assert len(entries) == 3
+    assert len(entries) == 6
     assert all(e["category"] == "出行交通" for e in entries)
     pending = list_review_queue(settings.db_path)
     assert len(pending) == 1  # 蜜雪冰城仍待确认

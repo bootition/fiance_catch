@@ -148,7 +148,7 @@ def test_process_batch_promote_rule_then_auto_posts(db, tmp_path):
         db,
         tmp_path,
         [
-            "2026-07-31 19:00:00,交通出行,滴滴出行,/,打车费,支出,26.50,余额宝,交易成功,TXN-PR1,,",
+            "2026-07-31 19:00:00,交通出行,滴滴打车平台,/,打车费,支出,26.50,余额宝,交易成功,TXN-PR1,,",
         ],
     )
     process_batch(db, 1)
@@ -158,7 +158,7 @@ def test_process_batch_promote_rule_then_auto_posts(db, tmp_path):
         db,
         tmp_path,
         [
-            "2026-08-01 19:00:00,交通出行,滴滴出行,/,打车费,支出,20.00,余额宝,交易成功,TXN-PR2,,",
+            "2026-08-01 19:00:00,交通出行,滴滴打车平台,/,打车费,支出,20.00,余额宝,交易成功,TXN-PR2,,",
         ],
         name="alipay2.csv",
     )
@@ -292,19 +292,19 @@ def test_group_review_items_groups_by_counterparty(db, tmp_path):
         [
             "2026-07-31 19:00:00,餐饮美食,美团外卖,/,外卖订单,支出,30.00,余额宝,交易成功,TXN-G1,,",
             "2026-07-30 19:00:00,餐饮美食,美团外卖,/,外卖订单,支出,25.00,余额宝,交易成功,TXN-G2,,",
-            "2026-07-29 19:00:00,交通出行,滴滴出行,/,打车,支出,20.00,余额宝,交易成功,TXN-G3,,",
+            "2026-07-29 19:00:00,交通出行,滴滴打车平台,/,打车,支出,20.00,余额宝,交易成功,TXN-G3,,",
         ],
     )
     process_batch(db, result.batch_id)
     groups = group_review_items(db)
     by_name = {g.counterparty: g for g in groups}
-    assert set(by_name) == {"美团外卖", "滴滴出行"}
+    assert set(by_name) == {"美团外卖", "滴滴打车平台"}
     assert by_name["美团外卖"].count == 2
     assert by_name["美团外卖"].total_cents == 5500
-    assert by_name["滴滴出行"].count == 1
+    assert by_name["滴滴打车平台"].count == 1
 
 
-def test_confirm_group_posts_and_creates_observing_rule(db, tmp_path):
+def test_confirm_group_posts_without_auto_rule(db, tmp_path):
     result = _import_rows(
         db,
         tmp_path,
@@ -322,14 +322,12 @@ def test_confirm_group_posts_and_creates_observing_rule(db, tmp_path):
         category=CATEGORY_DAILY_MEALS,
     )
     assert confirmed.confirmed == 2
-    assert confirmed.rule_id is not None
+    assert confirmed.rule_id is None  # 用户指引：不再自动创建规则
     entries = _list_ledger(db)
     assert len(entries) == 2
     assert all(e["category"] == CATEGORY_DAILY_MEALS for e in entries)
     assert list_review_queue(db) == []
-    rule = list_classification_rules(db)[0]
-    assert rule["status"] == "observing"
-    assert rule["match_pattern"] == "美团外卖"
+    assert list_classification_rules(db) == []
     audit = list_audit_events(db)
     assert any(e["event_type"] == "bulk_confirm" for e in audit)
 
@@ -470,17 +468,14 @@ def test_confirm_group_audit_events_have_correct_refs(db, tmp_path):
         db, "美团外卖", "alipay",
         entry_type=TYPE_CONSUMPTION, category=CATEGORY_DAILY_MEALS,
     )
-    assert confirmed.rule_id is not None
+    assert confirmed.rule_id is None
     events = [e for e in list_audit_events(db) if e["event_type"] == "bulk_confirm"]
     assert len(events) == 2
     entry_ids = {int(e["id"]) for e in list_ledger_entries(db)}
     assert {int(e["ref_ledger_id"]) for e in events} == entry_ids
     assert all(int(e["ref_batch_id"]) == result.batch_id for e in events)
-    assert all(int(e["ref_rule_id"]) == confirmed.rule_id for e in events)
-    # 本组创建的观察规则：确认计数等于本组笔数（红队 P3 修复 #5）
-    rule = list_classification_rules(db)[0]
-    assert int(rule["confirm_count"]) == 2
-    assert int(rule["hit_count"]) == 0
+    assert all(e["ref_rule_id"] is None for e in events)
+    assert list_classification_rules(db) == []
 
 
 # ── 红队 P3 修复回归（2026-08-14）──
@@ -579,7 +574,7 @@ def test_travel_rule_disabled_then_activate_refused(db, tmp_path):
     assert list_classification_rules(db)[0]["status"] == "disabled"
 
 
-def test_masked_counterparty_group_creates_item_desc_rule(db, tmp_path):
+def test_masked_counterparty_group_confirms_without_rule(db, tmp_path):
     """脱敏商户（含 *）不能成为规则条件；自动规则改按商品说明并固化平台/方向。"""
     result = _import_rows(
         db,
@@ -594,12 +589,8 @@ def test_masked_counterparty_group_creates_item_desc_rule(db, tmp_path):
         db, "****0", "alipay", direction="income",
         entry_type=TYPE_INCOME, category=CATEGORY_SIDE_INCOME,
     )
-    assert confirmed.rule_id is not None
-    rule = list_classification_rules(db)[0]
-    assert rule["match_field"] == "item_desc"
-    assert rule["match_pattern"] == "闲鱼虚拟资料"
-    assert rule["platform"] == "alipay"
-    assert rule["direction"] == "income"
+    assert confirmed.rule_id is None  # 脱敏商户不再自动生成规则
+    assert list_classification_rules(db) == []
 
 
 def test_match_rules_respects_platform_and_direction(db, tmp_path):

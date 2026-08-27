@@ -80,7 +80,7 @@
         <h2>内置交通识别规则</h2>
         <span class="state-pill">自动入账</span>
     </div>
-    <p class="note-text">支出方向且商品说明包含 <strong>「地铁_」/「单车」/「骑行」/「公交」</strong> 的交易，会自动归为「消费 · 出行交通」。用「地铁_」而非「地铁」，避免把“某地铁站旁的奶茶店”误判。</p>
+    <p class="note-text">支出方向且商品说明包含 <strong>「地铁_ / 单车 / 骑行 / 公交 / 机票 / 火车票」</strong>，或商户名以 <strong>「出行」</strong> 结尾（如滴滴出行、哈啰出行），会自动归为「消费 · 出行交通」。用「地铁_」而非「地铁」，避免把“某地铁站旁的奶茶店”误判。</p>
 </section>
 
 <section class="card">
@@ -107,9 +107,9 @@
                 <td>{{ rule.confirm_count }}</td>
                 <td class="inline-actions">
                     <a class="button-link quiet-link" href="/rules?rule_id={{ rule.id }}">命中历史</a>
-                    {% if rule.confirm_count > 0 %}
-                        <form method="post" action="/rules/{{ rule.id }}/reopen" onsubmit="return confirm('把这批批量确认的流水退回待确认重新分类？已退款关联/已人工编辑的会保留。')">
-                            <button type="submit" class="secondary">退回确认流水</button>
+                    {% if rule.confirm_count > 0 or rule.hit_count > 0 %}
+                        <form method="post" action="/rules/{{ rule.id }}/reopen" onsubmit="return confirm('把该规则入账的流水退回待确认重新分类？已退款关联/已人工编辑的会保留。')">
+                            <button type="submit" class="secondary">退回关联流水</button>
                         </form>
                     {% endif %}
                     {% if rule.status == "observing" %}

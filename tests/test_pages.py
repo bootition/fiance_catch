@@ -144,7 +144,7 @@ def test_inbox_confirm_group(client):
     )
     assert response.status_code == 200
     assert "已确认 2 项" in response.text
-    assert "观察期规则" in response.text
+    assert "观察期规则" not in response.text  # 不再自动创建规则
     # 提现等高危不可批量确认
     _upload(c, ["2026-07-29 10:00:00,账户存取,某银行,/,提现,不计收支,100.00,账户余额,交易成功,TXN-INW-1,,"])
     response2 = c.post(

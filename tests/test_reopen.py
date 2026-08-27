@@ -35,8 +35,22 @@ def _upload(client, rows):
 
 
 def test_rule_reopen_returns_group_to_inbox(client):
-    """按规则批量退回：账本删除、待办恢复，误操作可以重新分类。"""
+    """AI 写入的规则自动入账后，可按规则批量退回重新处理。"""
     c, settings = client
+    created = c.post(
+        "/rules",
+        data={
+            "match_field": "item_desc",
+            "match_pattern": "闲鱼虚拟资料",
+            "platform": "alipay",
+            "direction": "income",
+            "target_type": "income",
+            "target_category": "副业收入",
+        },
+    )
+    assert "已创建观察期规则" in created.text
+    assert c.post("/rules/1/promote").status_code == 200
+
     _upload(
         c,
         [
@@ -44,22 +58,11 @@ def test_rule_reopen_returns_group_to_inbox(client):
             "2026-07-02 10:00:00,收入,闲鱼小店,/,闲鱼虚拟资料,收入,20.00,余额宝,交易成功,TXN-RO-2,,",
         ],
     )
-    confirmed = c.post(
-        "/inbox/confirm",
-        data={
-            "counterparty": "闲鱼小店",
-            "platform": "alipay",
-            "direction": "income",
-            "entry_type": "income",
-            "category": "副业收入",
-        },
-    )
-    assert "已确认 2 项" in confirmed.text
     assert len(list_ledger_entries(settings.db_path)) == 2
     assert list_review_queue(settings.db_path) == []
 
     rules_page = c.get("/rules")
-    assert "退回确认流水" in rules_page.text
+    assert "退回关联流水" in rules_page.text
     response = c.post("/rules/1/reopen")
     assert response.status_code == 200
     assert "已退回 2 笔" in response.text

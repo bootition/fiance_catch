@@ -11,8 +11,6 @@ from dataclasses import dataclass
 from ..db import connect
 from ..ledger_repo import (
     _add_audit_event,
-    _bump_rule_stats,
-    _create_classification_rule,
     _create_ledger_entry,
 )
 from .constants import (
@@ -246,7 +244,7 @@ def group_review_items_paged(
 @dataclass(frozen=True)
 class ConfirmResult:
     confirmed: int
-    rule_id: int | None  # 建议创建的观察规则（若存在重复模式）
+    rule_id: int | None = None  # 用户指引 2026-08-27：不再自动创建规则
 
 
 def confirm_group(
@@ -259,11 +257,11 @@ def confirm_group(
     category: str,
     match_field: str = "counterparty",
 ) -> ConfirmResult:
-    """批量确认同商户同方向待确认项：统一入账并关闭队列项；若 ≥2 条则建议创建观察规则。
+    """批量确认同商户同方向待确认项：统一入账并关闭队列项。
 
-    match_field：创建规则时匹配商户（counterparty）或商品（item_desc）。
-    每条入账记录写入独立 bulk_confirm 审计事件（ref_ledger_id/ref_batch_id/ref_rule_id），
-    可从流水详情与规则命中历史追溯（红队修复，2026-08-14）。
+    用户指引（2026-08-27）：不再根据确认结果自动总结/创建规则；
+    规则只由用户操作 AI 显式写入。每条入账记录写入独立 bulk_confirm
+    审计事件，可从流水详情追溯。
     """
     with connect(db_path) as conn:
         conn.execute("BEGIN IMMEDIATE")
@@ -292,18 +290,6 @@ def confirm_group(
         category = _validate_confirm_choice(direction, entry_type, category)
 
         rule_id = None
-        if len(group.items) >= 2:
-            match_field, pattern = _rule_condition_for_group(group)
-            if pattern:
-                rule_id = _create_classification_rule(
-                    conn,
-                    match_field=match_field,
-                    match_pattern=pattern,
-                    platform=group.platform,
-                    direction=group.direction,
-                    target_type=entry_type,
-                    target_category=category,
-                )
 
         for item in group.items:
             source = conn.execute(
@@ -337,16 +323,9 @@ def confirm_group(
                 ref_batch_id=item.batch_id,
                 detail=(
                     f"counterparty:{counterparty};direction:{direction};"
-                    f"type:{entry_type};category:{category};"
-                    f"rule_field:{match_field};rule_pattern:{pattern}"
-                ) if rule_id is not None else (
-                    f"counterparty:{counterparty};direction:{direction};"
                     f"type:{entry_type};category:{category}"
                 ),
             )
-            if rule_id is not None:
-                # 本组创建的观察规则：每条确认计一次确认数（规格 §3.5，红队修复 2026-08-14）
-                _bump_rule_stats(conn, rule_id, confirmed=True)
 
         _sync_batch_pending_counts(
             conn,

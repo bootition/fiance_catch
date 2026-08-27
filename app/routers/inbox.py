@@ -365,14 +365,7 @@ async def inbox_confirm(
             entry_type=entry_type,
             category=category,
         )
-        flash = (
-            f"已确认 {result.confirmed} 项（{counterparty}）"
-            + (
-                f"，并建议创建观察期规则 #{result.rule_id}"
-                if result.rule_id is not None
-                else ""
-            )
-        )
+        flash = f"已确认 {result.confirmed} 项（{counterparty}）"
     except ValueError as exc:
         flash = f"批量确认失败：{exc}"
     return _section_response(request, "_category_table.html", flash, cat_page=cat_page, cat_q=cat_q)

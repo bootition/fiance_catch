@@ -165,7 +165,8 @@ def reopen_rule_confirmations(db_path, rule_id: int) -> ReopenResult:
             SELECT DISTINCT le.id
             FROM entry_audit_events AS e
             JOIN ledger_entries AS le ON le.id = e.ref_ledger_id
-            WHERE e.ref_rule_id = ? AND e.event_type = 'bulk_confirm'
+            WHERE e.ref_rule_id = ?
+              AND e.event_type IN ('bulk_confirm', 'rule_applied')
             ORDER BY le.id ASC
             """,
             (rule_id,),

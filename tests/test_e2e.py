@@ -194,7 +194,7 @@ def test_e2e_rule_active_auto_posts_and_observing_queues(client):
         "/rules",
         data={
             "match_field": "counterparty",
-            "match_pattern": "滴滴出行",
+            "match_pattern": "滴滴打车平台",
             "target_type": TYPE_CONSUMPTION,
             "target_category": CATEGORY_TRANSPORT,
         },
@@ -281,7 +281,7 @@ def test_e2e_cross_period_refund_net_cost(client):
 # ── 验收：同商户批量确认并创建观察规则 ──
 
 
-def test_e2e_bulk_confirm_creates_observing_rule(client):
+def test_e2e_bulk_confirm_does_not_auto_create_rule(client):
     c, settings = client
     _upload(c, ALIPAY_SAMPLE, "alipay")
     confirmed = _confirm_groups(c, settings, only="学校食堂")
@@ -290,8 +290,8 @@ def test_e2e_bulk_confirm_creates_observing_rule(client):
 
     from app.ledger_repo import list_classification_rules
 
-    rules = list_classification_rules(settings.db_path)
-    assert any(r["match_pattern"] == "学校食堂" and r["status"] == "observing" for r in rules)
+    # 用户指引：规则只由用户操作 AI 显式写入，批量确认不再自动创建
+    assert list_classification_rules(settings.db_path) == []
 
 
 # ── 验收：安全撤销（编辑/关联阻塞） ──
@@ -354,7 +354,7 @@ def test_e2e_overview_daily_ring_fence(client):
     # 制造旅游 + 副业 + 收入，确认日常五类环比不受影响
     rows = [
         "2026-06-20 10:00:00,餐饮美食,六月食堂,/,午餐,支出,10.00,余额宝,交易成功,TXN-OV-JUN1,,",
-        "2026-07-10 10:00:00,酒店旅游,某航司,/,机票,支出,800.00,余额宝,交易成功,TXN-OV-JUL1,,",
+        "2026-07-10 10:00:00,酒店旅游,某旅行社,/,酒店订单,支出,800.00,余额宝,交易成功,TXN-OV-JUL1,,",
         "2026-07-11 10:00:00,收入,****3,155******65,闲鱼虚拟资料,收入,30.00,,交易成功,TXN-OV-JUL2,,",
     ]
     path = settings.data_dir / "ov.csv"
@@ -366,8 +366,8 @@ def test_e2e_overview_daily_ring_fence(client):
     # 经 HTTP 批量确认全部分类区（某航司 → 旅游）
     for (counterparty, platform, direction), suggestion in _classification_groups(settings).items():
         category = suggestion["category"]
-        if counterparty == "某航司":
-            category = "旅游"  # 机票 → 旅游类（单独展示）
+        if counterparty == "某旅行社":
+            category = "旅游"  # 酒店 → 旅游类（单独展示）
         confirmed = c.post(
             "/inbox/confirm",
             data={
@@ -853,7 +853,7 @@ def test_e2e_rule_applied_audit_traceable_via_http(client):
         "/rules",
         data={
             "match_field": "counterparty",
-            "match_pattern": "滴滴出行",
+            "match_pattern": "滴滴打车平台",
             "target_type": TYPE_CONSUMPTION,
             "target_category": CATEGORY_TRANSPORT,
         },
@@ -877,13 +877,13 @@ def test_e2e_rule_applied_audit_traceable_via_http(client):
     assert events[0]["ref_ledger_id"] == entry["id"]
     assert events[0]["ref_rule_id"] == 1
     assert "field:counterparty" in events[0]["detail"]
-    assert "pattern:滴滴出行" in events[0]["detail"]
+    assert "pattern:滴滴打车平台" in events[0]["detail"]
 
     # 详情页展示规则命中证据
     detail = c.get(f"/transactions/{entry['id']}")
     assert detail.status_code == 200
     assert "规则自动入账" in detail.text
-    assert "滴滴出行" in detail.text  # 匹配依据
+    assert "滴滴打车平台" in detail.text  # 匹配依据
     assert "1" in detail.text or "rule" in detail.text  # 规则 ID 可见
 
     # 同一事件仍可按规则追溯（规则页命中历史依赖 ref_rule_id）

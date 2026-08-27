@@ -13,6 +13,7 @@ from .decisions.constants import (
     CATEGORY_DAILY_MEALS,
     CATEGORY_ENTERTAINMENT,
     CATEGORY_LEARNING,
+    CATEGORY_MEDICAL,
     CATEGORY_SIDE_COST,
     CATEGORY_SIDE_INCOME,
     CATEGORY_TRANSPORT,
@@ -28,6 +29,7 @@ DAILY_CATEGORIES = (
     CATEGORY_LEARNING,
     CATEGORY_ENTERTAINMENT,
     CATEGORY_DAILY_EXPENSES,
+    CATEGORY_MEDICAL,
 )
 
 
@@ -309,7 +311,7 @@ def list_categories_used(db_path) -> list[str]:
 def list_category_options(db_path) -> list[str]:
     """分类候选：正式 9 分类在前，历史已用自定义分类兜底在后。
 
-    PRD §2.2 只认 9 个正式分类；首次使用账本无任何分类时，
+    PRD §2.2 只认 10 个正式分类；首次使用账本无任何分类时，
     下拉框仍应展示正式分类，而不是只剩“选择分类”占位符。
     """
     seen: dict[str, None] = {}
