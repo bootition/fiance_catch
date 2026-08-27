@@ -1,88 +1,79 @@
 ---
-title: Architecture Overview
+title: 账单驱动个人财务系统架构说明（v2 当前产品面）
 status: approved
 category: decisions
-last-reviewed: 2026-05-27
+last-reviewed: 2026-08-27
 ---
 
-# Architecture Overview
+# 账单驱动个人财务系统架构说明
+
+> 本文件描述当前已上线产品面，与 `docs/decisions/01_refactor_spec.md`（规格）保持一致。
+> 旧版 review/cleanup 页面与旧导入工作流已经下线；旧代码仅作为历史迁移保留，不参与产品面。
 
 ## Product Surface
 
-- Bookkeeping dashboard: `/`
-- Review dashboard: `/review`
-- Cleanup center: `/cleanup`
-
-The import UI is no longer mounted. Historical import metadata remains in the
-database so cleanup workflows can continue to target imported batches safely.
+| 页面 | 路由 | 说明 |
+|---|---|---|
+| 本月概览 | `/` | 关键指标、日常消费环比、消费分类排行 |
+| 账单导入 | `/imports/new` | 支付宝 CSV / 微信 XLSX 单文件上传与处理结果 |
+| 待确认 | `/inbox` | 高风险区逐笔处理 + 分类区按组批量确认；分页、搜索、页码跳页 |
+| 流水 | `/transactions` | 筛选、简易补账、列表；详情 `/transactions/{id}` |
+| 规则 | `/rules` | 观察/自动/停用规则与命中历史 |
+| 批次 | `/imports` | 导入历史、撤销与阻塞项展示 |
 
 ## Runtime Model
 
 - Backend: FastAPI
-- Templates: Jinja2
-- Partial interactivity: HTMX on ledger flows
-- Charts: Chart.js on review page
-- Storage: SQLite at project-root `.data/ledger.sqlite`
+- Templates: Jinja2（`app/templates_core.py` 注册模板环境与分页窗口 helper）
+- Partial interactivity: HTMX 1.9.12（CDN，本地化是后续优化项）
+- Storage: SQLite at project-root `.data/ledger.sqlite`（schema v5）
 
 ## Domain Shape
 
-### Ledger
+### Import pipeline
 
-- Single-ledger product behavior
-- Manual transaction create, edit, delete
-- Date-range filtering
-- Summary cards and category totals
-- CSV export for current date range
+1. `app/importing/alipay.py` / `app/importing/wechat.py`：原始账单解析与标准化；不保存原始文件。
+2. `app/importing/service.py`：单事务写入 `import_batches` 与 `source_transactions`，按 `(platform, source_txn_id)` 去重。
+3. `app/decisions/engine.py`：逐条决策——退款/提现/人际/中性进入 `review_queue`，可信调拨与 active 规则自动入账，未命中进入分类区。
 
-### Review
+### Review queue
 
-- Week / month / year windows
-- Weekly buckets anchored on Sunday
-- Multi-indicator line chart:
-  - `income_total`
-  - `expense_total`
-  - per-category project datasets
-- Expense category pie chart built from the filtered dataset
-- Project filtering based on `transactions.category`
+- `app/decisions/confirm.py`：分类区按 `商户 × 平台 × 收支方向` 分组、分页搜索、批量确认并建议观察期规则。
+- `app/decisions/high_risk.py`：提现用途与人际/中性资金流逐笔定性。
+- `app/refunds/matching.py` + `app/refunds/linking.py`：退款候选匹配与受约束人工关联；跨期退款通过原消费 `txn_date` 回写统计。
+- `app/routers/inbox.py`：待确认页面与局部刷新路由（分区翻页/搜索、退款候选刷新、处理提交）。
 
-### Cleanup
+### Ledger and reporting
 
-- Bulk-delete preview and execute flows
-- `DELETE` / `DELETE ALL` confirmation guard
-- Matched-count recheck before execution
-- Delete by retained `import_batch_id` batches
-- Delete by filters: start, end, direction, category, note, imported-only
+- `app/ledger_repo.py`：账本/来源流水/待办/规则/审计的仓储层；退款不变量在写路径强制。
+- `app/stats.py`：概览净额统计（退款后口径）、流水筛选、正式分类候选。
+- `app/routers/transactions.py`：流水筛选（日期/类型/分类/平台/批次/来源状态/人工改动）、简易补账、详情、编辑与删除。
+- `app/revoke.py` + `app/routers/imports.py`：安全批次撤销，阻塞项（已编辑/已退款关联）明确列出。
 
-## Persistence And Compatibility
+### Rules
 
-- SQLite schema keeps legacy multi-account compatibility data.
-- Current product behavior ignores account scoping in active user flows.
-- Legacy `account_id` values remain readable in reports and listings.
-- `transactions.import_batch_id` is retained because cleanup depends on it.
+- `app/decisions/rules.py`：仅匹配商户/对方或商品说明；active 优先于 observing。
+- 旅游类规则命中只预填且禁止提升为自动入账（规格 §2.2/§3.5）。
 
 ## Key Modules
 
 - `app/main.py`: app assembly and router mounting
-- `app/db.py`: schema creation and legacy repair/rebuild logic
-- `app/repo.py`: active transaction, summary, cleanup, and import-batch queries
-- `app/router_support/`: shared request parsing, navigation, settings access, and
-  cleanup token helpers
-- `app/routers/ledger.py`: ledger page and transaction CRUD
-- `app/routers/review.py`: review aggregation and review page
-- `app/routers/cleanup.py`: cleanup page
-- `app/routers/bulk_delete.py`: bulk-delete preview and execute endpoints
+- `app/db.py`: legacy schema repair entry（仅当未初始化 v2 时）
+- `app/migration_v2.py`: v2 schema、备份/重置迁移（schema v5）
+- `app/decisions/`: 入账决策、分组确认、高风险处理、规则匹配
+- `app/importing/`: 支付宝/微信解析与导入服务
+- `app/refunds/`: 退款状态、候选匹配、人工关联
+- `app/router_support/`: settings 访问、请求解析、分页窗口 helper
+- `app/routers/`: 产品面路由（overview/imports/inbox/transactions/rules）
 
-## Explicit Non-Goals
+## Persistence And Compatibility
 
-- No authentication or multi-user support
-- No cloud sync
-- No mounted import preview/import workflow
-- No active account-management UI
+- 新模型表：`import_batches`、`source_transactions`、`ledger_entries`、`review_queue`、`refund_links`、`classification_rules`、`entry_audit_events`、`schema_meta`。
+- 旧 `transactions` / `import_sessions` / `import_rows` / `category_rules` 表与旧路由不参与当前产品面。
+- `pytest` 直接运行；生产入口在应用 lifespan 调用 `init_db()` 建库/升级。
 
 ## Operational Notes
 
-- Static assets and the default data directory are anchored to project paths, not
-  the current working directory.
-- Bulk-delete preview tokens are still process-local in-memory state. This is
-  acceptable for the local single-user app, but it is not restart-safe or
-  multi-worker safe.
+- Static assets and the default data directory are anchored to project paths, not the current working directory.
+- Bulk-delete preview tokens from the legacy cleanup workflow are no longer part of the product surface.
+- 当前测试基线以 `docs/STATUS.md` 为准。
