@@ -87,10 +87,10 @@ def test_refund_candidates_merchant_id_scored(db, tmp_path):
     refund_source_id = _source_id(db, "TXN-R1_RM001")
     candidates = find_refund_candidates(db, refund_source_id)
     assert len(candidates) >= 2
-    # 商户单号匹配（90 分）优先于同金额超市（60 分）
+    # 商户单号匹配（95 分）优先于同平台同日同金额（90 分）
     assert candidates[0].match_reason == "商户单号匹配"
-    assert candidates[0].score == 90
-    assert candidates[1].score == 60
+    assert candidates[0].score == 95
+    assert candidates[1].score == 90
 
 
 def test_refund_candidates_original_txn_prefix(db, tmp_path):

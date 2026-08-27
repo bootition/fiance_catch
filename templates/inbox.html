@@ -104,13 +104,16 @@
     });
     document.body.addEventListener('htmx:afterSwap', function (event) {
         if (!pendingScrollAnchor) return;
-        var current = document.getElementById(pendingScrollAnchor.targetId);
-        if (current) {
-            var rect = current.getBoundingClientRect();
-            var delta = rect.top - pendingScrollAnchor.targetTop;
-            window.scrollTo(0, pendingScrollAnchor.scrollY + delta);
-        }
+        var anchor = pendingScrollAnchor;
         pendingScrollAnchor = null;
+        requestAnimationFrame(function () {
+            var current = document.getElementById(anchor.targetId);
+            if (current) {
+                var rect = current.getBoundingClientRect();
+                var delta = rect.top - anchor.targetTop;
+                window.scrollTo(0, anchor.scrollY + delta);
+            }
+        });
     });
 })();
 </script>

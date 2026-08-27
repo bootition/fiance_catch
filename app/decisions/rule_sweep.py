@@ -354,13 +354,20 @@ def auto_link_unambiguous_refunds(db_path) -> int:
     linked = 0
     for row in rows:
         candidates = find_refund_candidates(db_path, int(row["source_transaction_id"]))
-        if len(candidates) != 1:
+        if not candidates:
+            continue
+        chosen = None
+        if len(candidates) == 1:
+            chosen = candidates[0]
+        elif candidates[0].score >= 80 and candidates[0].score - candidates[1].score >= 10:
+            chosen = candidates[0]
+        if chosen is None:
             continue
         try:
             link_refund_to_ledger(
                 db_path,
                 int(row["source_transaction_id"]),
-                int(candidates[0].ledger_id),
+                int(chosen.ledger_id),
             )
             linked += 1
         except ValueError:

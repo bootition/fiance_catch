@@ -15,7 +15,7 @@ RM_SUFFIX_RE = re.compile(r"^(.*?)_RM\d+$")
 # 退款行商品说明形如"退款-商户单号XXX"；原消费行商品说明为"商户单号XXX"
 MERCHANT_ID_RE = re.compile(r"商户单号([A-Za-z0-9_\-]+)")
 
-MATCH_WINDOW_DAYS = 90
+MATCH_WINDOW_DAYS = None  # 用户指引 2026-08-28：不限制时间窗口
 
 
 @dataclass(frozen=True)
@@ -67,20 +67,15 @@ def find_refund_candidates(db_path, refund_source_id: int) -> list[RefundCandida
         original_txn, merchant_id = _extract_refund_refs(refund)
         refund_date = refund["occurred_at"][:10]
         refund_amount = int(refund["amount_cents"])
-        window_start = (
-            datetime.strptime(refund_date, "%Y-%m-%d")
-            - timedelta(days=MATCH_WINDOW_DAYS)
-        ).strftime("%Y-%m-%d")
-
         rows = conn.execute(
             """
             SELECT le.id, le.amount_cents, le.txn_date, le.source_transaction_id
             FROM ledger_entries AS le
             WHERE le.entry_type = 'consumption'
-              AND le.txn_date >= ? AND le.txn_date <= ?
+              AND le.txn_date <= ?
             ORDER BY le.txn_date DESC, le.id DESC
             """,
-            (window_start, refund_date),
+            (refund_date,),
         ).fetchall()
 
         candidates: list[RefundCandidate] = []
@@ -107,6 +102,10 @@ def find_refund_candidates(db_path, refund_source_id: int) -> list[RefundCandida
                 merchant_id=merchant_id,
                 counterparty=source["counterparty"] if source is not None else "",
                 refund_counterparty=refund["counterparty"],
+                refund_platform=refund["platform"],
+                entry_platform=source["platform"] if source is not None else "",
+                refund_date=refund_date,
+                entry_date=row["txn_date"],
             )
             if score <= 0:
                 continue
@@ -137,14 +136,39 @@ def _score(
     merchant_id: str,
     counterparty: str,
     refund_counterparty: str,
+    refund_platform: str,
+    entry_platform: str,
+    refund_date: str,
+    entry_date: str,
 ) -> tuple[int, str]:
-    """匹配打分：订单级引用 100 > 商户单号 90 > 金额+同商户 70 > 金额+时间窗 60。"""
+    """匹配打分：订单引用 > 同平台同日同金额 > 商户单号 > 时间相近 > 同商户 > 同平台 > 仅同金额。
+
+    用户指引 2026-08-28：退款可跨长时间匹配，优先当天/时间相近、
+    相同平台、金额相同。
+    """
     if original_txn and source_txn == original_txn:
         return 100, "原交易订单号匹配"
     if merchant_id and merchant_id in item_desc:
-        return 90, "商户单号匹配"
+        return 95, "商户单号匹配"
     if refund_amount != entry_amount:
         return 0, ""
-    if counterparty and counterparty == refund_counterparty:
-        return 70, "同商户金额匹配"
-    return 60, "金额与时间窗口匹配"
+
+    same_platform = entry_platform == refund_platform
+    try:
+        refund_d = datetime.strptime(refund_date, "%Y-%m-%d").date()
+        entry_d = datetime.strptime(entry_date, "%Y-%m-%d").date()
+        day_diff = abs((refund_d - entry_d).days)
+    except ValueError:
+        day_diff = 999999
+
+    if same_platform and day_diff == 0:
+        return 90, "同平台同金额同日匹配"
+    if same_platform and day_diff <= 3:
+        return 88, "同平台同金额时间相近匹配"
+    if same_platform and day_diff <= 7:
+        return 86, "同平台同金额一周内匹配"
+    if same_platform and counterparty and counterparty == refund_counterparty:
+        return 85, "同平台同商户金额匹配"
+    if same_platform:
+        return 80, "同平台金额匹配"
+    return 60, "金额匹配（跨平台）"
