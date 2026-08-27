@@ -11,7 +11,7 @@ from ..ledger_repo import (
     update_ledger_entry,
 )
 from ..router_support.settings_access import current_settings
-from ..stats import list_categories_used, list_entries_filtered
+from ..stats import list_category_options, list_entries_filtered, list_source_statuses
 from ..templates_core import templates
 from ..validation import validate_iso_date
 
@@ -63,6 +63,7 @@ def transactions_list(
     platform: str | None = None,
     batch_id: int | None = None,
     manual_only: bool = False,
+    source_status: str | None = None,
     flash: str | None = None,
 ):
     settings = current_settings()
@@ -78,6 +79,7 @@ def transactions_list(
         platform=platform or None,
         batch_id=batch_id,
         manual_only=manual_only,
+        source_status=source_status or None,
     )
     context = {
         "request": request,
@@ -92,8 +94,10 @@ def transactions_list(
             "platform": platform or "",
             "batch_id": batch_id,
             "manual_only": manual_only,
+            "source_status": source_status or "",
         },
-        "categories": list_categories_used(settings.db_path),
+        "categories": list_category_options(settings.db_path),
+        "source_statuses": list_source_statuses(settings.db_path),
         "batches": _batch_options(settings.db_path),
         "type_labels": {"consumption": "消费", "income": "收入", "transfer": "调拨", "refund": "退款"},
         "flash": flash,
@@ -143,8 +147,9 @@ def transactions_create(
         "entries": rows,
         "start": start,
         "end": end,
-        "filters": {"entry_type": "", "category": "", "platform": "", "batch_id": None, "manual_only": False},
-        "categories": list_categories_used(settings.db_path),
+        "filters": {"entry_type": "", "category": "", "platform": "", "batch_id": None, "manual_only": False, "source_status": ""},
+        "categories": list_category_options(settings.db_path),
+        "source_statuses": list_source_statuses(settings.db_path),
         "batches": _batch_options(settings.db_path),
         "type_labels": {"consumption": "消费", "income": "收入", "transfer": "调拨", "refund": "退款"},
         "flash": flash,

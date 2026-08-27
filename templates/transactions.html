@@ -38,6 +38,15 @@
             </select>
         </label>
         <label>
+            来源状态
+            <select name="source_status">
+                <option value="">全部</option>
+                {% for status in source_statuses %}
+                    <option value="{{ status }}" {% if filters.source_status == status %}selected{% endif %}>{{ status }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label>
             批次
             <select name="batch_id">
                 <option value="">全部</option>
@@ -106,6 +115,7 @@
                 <td>{% if entry.refunded_cents %}{{ "%.2f"|format(entry.refunded_cents / 100) }}{% else %}—{% endif %}</td>
                 <td>
                     {% if entry.counterparty %}{{ entry.counterparty }}<br>{% endif %}
+                    {% if entry.item_desc %}<small>{{ entry.item_desc | truncate(40, true, "…") }}</small><br>{% endif %}
                     {% if entry.platform %}<small>{{ "支付宝" if entry.platform == "alipay" else "微信" }} · {{ entry.status_text }}</small>{% endif %}
                     {% if entry.batch_id %}<small>批次#{{ entry.batch_id }}</small>{% endif %}
                 </td>

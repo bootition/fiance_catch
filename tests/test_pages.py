@@ -210,6 +210,45 @@ def test_transactions_delete(client):
     assert list_ledger_entries(settings.db_path) == []
 
 
+def test_transactions_filter_by_source_status(client):
+    c, settings = client
+    _upload(
+        c,
+        [
+            "2026-07-31 19:00:00,餐饮美食,美团外卖,/,外卖订单,支出,30.00,余额宝,交易成功,TXN-ST-1,,"
+        ],
+    )
+    c.post(
+        "/inbox/confirm",
+        data={
+            "counterparty": "美团外卖",
+            "platform": "alipay",
+            "direction": "expense",
+            "entry_type": "consumption",
+            "category": "日常三餐",
+        },
+    )
+    response = c.get(
+        "/transactions",
+        params={
+            "start": "2026-07-01",
+            "end": "2026-07-31",
+            "source_status": "交易成功",
+        },
+    )
+    assert response.status_code == 200
+    assert "美团外卖" in response.text
+    no_match = c.get(
+        "/transactions",
+        params={
+            "start": "2026-07-01",
+            "end": "2026-07-31",
+            "source_status": "退款成功",
+        },
+    )
+    assert "无匹配流水" in no_match.text
+
+
 # ── 规则 ──
 
 
