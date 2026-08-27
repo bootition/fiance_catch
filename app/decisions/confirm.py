@@ -120,6 +120,27 @@ def group_review_items(db_path) -> list[Group]:
     ]
 
 
+def group_review_items_paged(
+    db_path, *, page: int = 1, per_page: int = 30, q: str = ""
+) -> tuple[list[Group], int, int]:
+    """分类区分页 + 按商户模糊搜索。
+
+    返回 (当前页 groups, 过滤后总组数, 过滤后总笔数)。
+    分组仍在全量结果上完成（内存分组为毫秒级），分页仅限制渲染到页面的
+    组数——这是消除页面渲染卡顿的关键（渲染几百个原生 select 才是瓶颈）。
+    """
+    groups = group_review_items(db_path)
+    query = (q or "").strip()
+    if query:
+        groups = [g for g in groups if query.lower() in (g.counterparty or "").lower()]
+    total_groups = len(groups)
+    total_items = sum(g.count for g in groups)
+    total_pages = max(1, (total_groups + per_page - 1) // per_page)
+    safe_page = max(1, min(int(page), total_pages))
+    start = (safe_page - 1) * per_page
+    return groups[start : start + per_page], total_groups, total_items
+
+
 @dataclass(frozen=True)
 class ConfirmResult:
     confirmed: int

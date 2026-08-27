@@ -76,7 +76,7 @@ def test_inbox_confirm_returns_category_section_fragment(client):
     assert response.status_code == 200
     text = response.text
     assert "<html" not in text  # 局部片段而非整页
-    assert 'id="category-section"' in text
+    assert 'id="category-table-area"' in text
     assert "已确认 2 项" in text
     assert 'hx-swap-oob="innerHTML"' in text  # 导航计数 OOB
 
@@ -182,3 +182,31 @@ def test_inbox_high_risk_pagination(client):
     assert page2.text.count("card-inner") == 5
     assert "第 2 / 2 页" in page2.text
     assert "<html" not in page2.text
+
+
+def test_inbox_category_pagination_and_search(client):
+    """分类区超过每页上限时分页，且支持按商户名模糊搜索。"""
+    c, settings = client
+    rows = [
+        f"2026-07-01 10:{i:02d}:00,日用百货,商户{i:02d},/,消费,支出,10.00,余额宝,交易成功,TXN-CAT-{i},,"
+        for i in range(1, 41)
+    ]
+    _upload(c, rows)
+    page1 = c.get("/inbox")
+    assert page1.status_code == 200
+    # 整页含搜索框 form + 30 个分类行 form（每页 30 组）
+    assert page1.text.count('<form method="post"') == 30
+    assert "第 1 / 2 页" in page1.text
+    assert "共 40 组" in page1.text
+    # 翻页：第 2 页 10 组
+    page2 = c.get("/inbox/category", params={"page": 2})
+    assert page2.status_code == 200
+    assert page2.text.count('<form method="post"') == 10
+    assert "第 2 / 2 页" in page2.text
+    assert "<html" not in page2.text
+    # 搜索：按商户名过滤
+    result = c.get("/inbox/category", params={"q": "商户05"})
+    assert result.status_code == 200
+    assert result.text.count('<form method="post"') == 1
+    assert "商户05" in result.text
+    assert "商户06" not in result.text

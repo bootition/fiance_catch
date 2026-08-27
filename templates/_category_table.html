@@ -1,0 +1,62 @@
+<div id="category-table-area">
+    {% if flash %}<p class="flash-note">{{ flash }}</p>{% endif %}
+    {% if groups %}
+        <div class="table-wrap">
+        <table>
+            <thead>
+            <tr><th>商户</th><th>平台</th><th>方向</th><th>笔数</th><th>合计（元）</th><th>批量指定</th></tr>
+            </thead>
+            <tbody>
+            {% for group in groups %}
+                <tr>
+                    <td>{{ group.counterparty or "（无对方）" }}</td>
+                    <td>{{ "支付宝" if group.platform == "alipay" else "微信" }}</td>
+                    <td>{{ direction_labels.get(group.direction, group.direction) }}</td>
+                    <td>{{ group.count }}</td>
+                    <td>{{ "%.2f"|format(group.total_cents / 100) }}</td>
+                    <td>
+                        <form method="post" action="/inbox/confirm" class="inline-form"
+                              hx-post="/inbox/confirm" hx-target="#category-table-area" hx-swap="outerHTML">
+                            <input type="hidden" name="counterparty" value="{{ group.counterparty }}">
+                            <input type="hidden" name="platform" value="{{ group.platform }}">
+                            <input type="hidden" name="direction" value="{{ group.direction }}">
+                            <input type="hidden" name="cat_page" value="{{ cat_page }}">
+                            <input type="hidden" name="cat_q" value="{{ cat_q }}">
+                            <select name="entry_type" required>
+                                {% for value, label in type_labels.items() %}
+                                    <option value="{{ value }}" {% if group.items[0].suggested_type == value %}selected{% endif %}>{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                            <select name="category" required>
+                                <option value="">选择分类</option>
+                                {% for cat in categories %}
+                                    <option value="{{ cat }}" {% if group.items[0].suggested_category == cat %}selected{% endif %}>{{ cat }}</option>
+                                {% endfor %}
+                            </select>
+                            <button type="submit" class="secondary" hx-disabled-elt="this">确认 {{ group.count }} 项</button>
+                        </form>
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        </div>
+        {% if cat_total_pages > 1 %}
+        <nav class="pagination" aria-label="分类区分页">
+            {% if cat_page > 1 %}
+            <button class="quiet" hx-get="/inbox/category?page={{ cat_page - 1 }}&q={{ cat_q | urlencode }}" hx-target="#category-table-area" hx-swap="outerHTML">上一页</button>
+            {% else %}
+            <button class="quiet" disabled>上一页</button>
+            {% endif %}
+            <span class="pagination-info">第 {{ cat_page }} / {{ cat_total_pages }} 页 · 共 {{ cat_total_groups }} 组（{{ cat_total_items }} 笔）</span>
+            {% if cat_page < cat_total_pages %}
+            <button class="quiet" hx-get="/inbox/category?page={{ cat_page + 1 }}&q={{ cat_q | urlencode }}" hx-target="#category-table-area" hx-swap="outerHTML">下一页</button>
+            {% else %}
+            <button class="quiet" disabled>下一页</button>
+            {% endif %}
+        </nav>
+        {% endif %}
+    {% else %}
+        <p>{% if cat_q %}没有匹配「{{ cat_q }}」的商户。{% else %}分类区暂无待处理项。{% endif %}</p>
+    {% endif %}
+</div>

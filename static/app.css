@@ -177,6 +177,17 @@ h3 {
     font-size: 13px;
 }
 
+.search-form {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 12px 0;
+}
+
+.search-form input[type="search"] {
+    max-width: 320px;
+}
+
 .refund-hint .note-text {
     margin: 0;
     flex: 1;

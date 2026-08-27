@@ -2,7 +2,7 @@ from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from ..db import connect
-from ..decisions.confirm import confirm_group, group_review_items
+from ..decisions.confirm import confirm_group, group_review_items_paged
 from ..decisions.constants import TYPE_CONSUMPTION, TYPE_INCOME, TYPE_TRANSFER
 from ..decisions.high_risk import (
     WITHDRAWAL_PURPOSES,
@@ -48,6 +48,7 @@ WITHDRAWAL_PURPOSE_LABELS = {
 
 
 RISK_PER_PAGE = 20
+CATEGORY_PER_PAGE = 30
 
 
 def _high_risk_items(db_path, *, page: int = 1, per_page: int = RISK_PER_PAGE) -> tuple[list[dict], int]:
@@ -161,7 +162,13 @@ def _pending_count() -> int:
         )
 
 
-def _inbox_context(request: Request, flash: str | None, risk_page: int = 1) -> dict:
+def _inbox_context(
+    request: Request,
+    flash: str | None,
+    risk_page: int = 1,
+    cat_page: int = 1,
+    cat_q: str = "",
+) -> dict:
     settings = current_settings()
     items, risk_total = _high_risk_items(settings.db_path, page=risk_page)
     risk_total_pages = max(1, (risk_total + RISK_PER_PAGE - 1) // RISK_PER_PAGE)
@@ -169,6 +176,13 @@ def _inbox_context(request: Request, flash: str | None, risk_page: int = 1) -> d
     if risk_page > risk_total_pages:
         risk_page = risk_total_pages
         items, risk_total = _high_risk_items(settings.db_path, page=risk_page)
+
+    groups, cat_total_groups, cat_total_items = group_review_items_paged(
+        settings.db_path, page=cat_page, per_page=CATEGORY_PER_PAGE, q=cat_q
+    )
+    cat_total_pages = max(1, (cat_total_groups + CATEGORY_PER_PAGE - 1) // CATEGORY_PER_PAGE)
+    cat_page = max(1, min(int(cat_page), cat_total_pages))
+
     return {
         "request": request,
         "active_page": "inbox",
@@ -178,7 +192,12 @@ def _inbox_context(request: Request, flash: str | None, risk_page: int = 1) -> d
         "risk_page": risk_page,
         "risk_total": risk_total,
         "risk_total_pages": risk_total_pages,
-        "groups": group_review_items(settings.db_path),
+        "groups": groups,
+        "cat_page": cat_page,
+        "cat_q": cat_q,
+        "cat_total_groups": cat_total_groups,
+        "cat_total_items": cat_total_items,
+        "cat_total_pages": cat_total_pages,
         "type_labels": TYPE_LABELS,
         "direction_labels": DIRECTION_LABELS,
         "categories": list_categories_used(settings.db_path),
@@ -189,16 +208,22 @@ def _inbox_context(request: Request, flash: str | None, risk_page: int = 1) -> d
 
 
 @router.get("/inbox", response_class=HTMLResponse)
-def inbox(request: Request, risk_page: int = 1):
+def inbox(request: Request, risk_page: int = 1, cat_page: int = 1, cat_q: str = ""):
     return templates.TemplateResponse(
-        request, "inbox.html", _inbox_context(request, None, risk_page)
+        request, "inbox.html", _inbox_context(request, None, risk_page, cat_page, cat_q)
     )
 
 
 @router.get("/inbox/high-risk", response_class=HTMLResponse)
 def inbox_high_risk(request: Request, page: int = 1):
     """高风险区翻页局部刷新：仅返回高风险区 section。"""
-    return _section_response(request, "_high_risk_section.html", None, page)
+    return _section_response(request, "_high_risk_section.html", None, risk_page=page)
+
+
+@router.get("/inbox/category", response_class=HTMLResponse)
+def inbox_category(request: Request, page: int = 1, q: str = ""):
+    """分类区翻页 / 搜索局部刷新：仅返回分类区表格区域。"""
+    return _section_response(request, "_category_table.html", None, cat_page=page, cat_q=q)
 
 
 def _pending_badge_oob() -> str:
@@ -210,9 +235,16 @@ def _pending_badge_oob() -> str:
     )
 
 
-def _section_response(request: Request, template_name: str, flash: str | None, risk_page: int = 1) -> HTMLResponse:
+def _section_response(
+    request: Request,
+    template_name: str,
+    flash: str | None,
+    risk_page: int = 1,
+    cat_page: int = 1,
+    cat_q: str = "",
+) -> HTMLResponse:
     """渲染局部片段（section / 卡片）+ 追加待确认计数 OOB 片段。"""
-    context = _inbox_context(request, flash, risk_page)
+    context = _inbox_context(request, flash, risk_page, cat_page, cat_q)
     body = templates.env.get_template(template_name).render(context)
     return HTMLResponse(body + _pending_badge_oob())
 
@@ -236,7 +268,8 @@ async def inbox_confirm(
     direction: str = Form("expense"),
     entry_type: str = Form(...),
     category: str = Form(...),
-    risk_page: int = Form(1),
+    cat_page: int = Form(1),
+    cat_q: str = Form(""),
 ):
     settings = current_settings()
     try:
@@ -258,7 +291,7 @@ async def inbox_confirm(
         )
     except ValueError as exc:
         flash = f"批量确认失败：{exc}"
-    return _section_response(request, "_category_section.html", flash, risk_page)
+    return _section_response(request, "_category_table.html", flash, cat_page=cat_page, cat_q=cat_q)
 
 
 @router.post("/inbox/refund/link", response_class=HTMLResponse)
@@ -280,7 +313,7 @@ async def inbox_refund_link(
         )
     except ValueError as exc:
         flash = f"退款关联失败：{exc}"
-    return _section_response(request, "_high_risk_section.html", flash, risk_page)
+    return _section_response(request, "_high_risk_section.html", flash, risk_page=risk_page)
 
 
 @router.post("/inbox/resolve", response_class=HTMLResponse)
@@ -304,4 +337,4 @@ async def inbox_resolve(
         flash = f"已定性 #{result.entry_id}（{HIGH_RISK_LABELS.get(result.reason, result.reason)}）"
     except ValueError as exc:
         flash = f"处理失败：{exc}"
-    return _section_response(request, "_high_risk_section.html", flash, risk_page)
+    return _section_response(request, "_high_risk_section.html", flash, risk_page=risk_page)
