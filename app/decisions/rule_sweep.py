@@ -10,10 +10,12 @@ from dataclasses import dataclass
 
 from ..db import connect
 from ..ledger_repo import _add_audit_event, _bump_rule_stats, _create_ledger_entry
-from .constants import REASON_OTHER_NEUTRAL, TYPE_TRANSFER
+from .constants import CATEGORY_OTHER_INCOME, REASON_OTHER_NEUTRAL, TYPE_INCOME, TYPE_TRANSFER
 from .builtin_rules import (
     _sync_batch_pending,
     apply_builtin_rules_to_pending,
+    matches_builtin_huabei_discard,
+    matches_builtin_interest_income,
     matches_builtin_transport,
 )
 from ..refunds.linking import link_refund_to_ledger
@@ -366,11 +368,72 @@ def auto_link_unambiguous_refunds(db_path) -> int:
     return linked
 
 
+def apply_builtin_neutral_pending(db_path) -> int:
+    """高风险区 other_neutral 的内置规则：余额宝收益→其他收入；花呗还款→丢弃。"""
+    with connect(db_path) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        rows = conn.execute(
+            """
+            SELECT
+              rq.id AS review_id,
+              rq.source_transaction_id,
+              st.*
+            FROM review_queue AS rq
+            JOIN source_transactions AS st ON st.id = rq.source_transaction_id
+            WHERE rq.status = 'pending'
+              AND rq.reason = ?
+            ORDER BY st.occurred_at ASC, st.id ASC
+            """,
+            (REASON_OTHER_NEUTRAL,),
+        ).fetchall()
+        posted = 0
+        for row in rows:
+            source = dict(row)
+            if matches_builtin_interest_income(source):
+                entry_type, category, pattern = TYPE_INCOME, CATEGORY_OTHER_INCOME, "interest"
+            elif matches_builtin_huabei_discard(source):
+                entry_type, category, pattern = TYPE_TRANSFER, "", "huabei_repay"
+            else:
+                continue
+            entry_id = _create_ledger_entry(
+                conn,
+                entry_type=entry_type,
+                amount_cents=source["amount_cents"],
+                category=category,
+                txn_date=source["occurred_at"][:10],
+                source_transaction_id=source["id"],
+                batch_id=source["batch_id"],
+                note="",
+            )
+            conn.execute(
+                """
+                UPDATE review_queue
+                SET status = 'resolved',
+                    resolved_ledger_id = ?,
+                    resolved_at = datetime('now')
+                WHERE id = ? AND status = 'pending'
+                """,
+                (entry_id, source["review_id"]),
+            )
+            _add_audit_event(
+                conn,
+                event_type="rule_applied",
+                ref_ledger_id=entry_id,
+                ref_batch_id=source["batch_id"],
+                detail=f"builtin:1;field:{pattern};pattern:{pattern}",
+            )
+            _sync_batch_pending(conn, source["batch_id"])
+            posted += 1
+        conn.commit()
+        return posted
+
+
 def apply_all_rules_to_pending(db_path) -> int:
     """内置规则 + active 用户规则，全部应用到 unmatched 待确认。"""
     total = apply_builtin_rules_to_pending(db_path).posted
     total += apply_active_rules_to_pending(db_path)
     total += apply_transfer_rules_to_neutral_pending(db_path)
     total += apply_person_transfer_rules(db_path)
+    total += apply_builtin_neutral_pending(db_path)
     total += auto_link_unambiguous_refunds(db_path)
     return total

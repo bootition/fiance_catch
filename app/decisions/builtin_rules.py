@@ -82,7 +82,8 @@ def matches_builtin_jd(source):
     item_desc = str(source["item_desc"] or "").strip()
     if "京东" not in counterparty and "京东" not in item_desc:
         return None
-    if re.fullmatch(r"\d+", item_desc) and int(source["amount_cents"]) < 3500:
+    numeric = re.sub(r"^京东-?订单编号", "", item_desc)
+    if re.fullmatch(r"\d+", numeric) and int(source["amount_cents"]) < 3500:
         return "jd_numeric_small"
     return None
 
@@ -112,6 +113,26 @@ def matches_builtin_meituan(source):
         return None
     if re.search(r"[一-鿿]", item_desc):
         return ("日常三餐", "meituan_named")
+    return None
+
+
+def matches_builtin_interest_income(source):
+    """余额宝/货币基金收益 → 收入·其他收入（用户指引 2026-08-28）。"""
+    if source["direction"] != "neutral":
+        return None
+    item_desc = str(source["item_desc"] or "")
+    if "收益发放" in item_desc or "利息" in item_desc:
+        return "interest"
+    return None
+
+
+def matches_builtin_huabei_discard(source):
+    """花呗还款：消费已记账，还款本身丢弃为调拨（不计收支）。"""
+    if source["direction"] != "neutral":
+        return None
+    text = f"{source['counterparty']} {source['item_desc']} {source['raw_type']}"
+    if "花呗" in text and ("还款" in text or "信用借还" in text):
+        return "huabei_repay"
     return None
 
 

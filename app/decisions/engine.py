@@ -20,7 +20,7 @@ from ..ledger_repo import (
     _enqueue_review,
     _update_batch_counts,
 )
-from .builtin_rules import matches_builtin_jd, matches_builtin_meituan, matches_builtin_side_income, matches_builtin_transport
+from .builtin_rules import matches_builtin_huabei_discard, matches_builtin_interest_income, matches_builtin_jd, matches_builtin_meituan, matches_builtin_side_income, matches_builtin_transport
 from .constants import (
     CATEGORY_SIDE_INCOME,
     CATEGORY_TRAVEL,
@@ -167,6 +167,37 @@ def process_source(conn, source) -> str:
         )
         return ACTION_QUEUED
     if source["direction"] == "neutral":
+        if matches_builtin_interest_income(source):
+            entry_id = _create_ledger_entry(
+                conn,
+                entry_type=TYPE_INCOME,
+                amount_cents=source["amount_cents"],
+                category="其他收入",
+                txn_date=source["occurred_at"][:10],
+                source_transaction_id=source["id"],
+                batch_id=source["batch_id"],
+                note="",
+            )
+            _add_audit_event(
+                conn,
+                event_type="rule_applied",
+                ref_ledger_id=entry_id,
+                ref_batch_id=source["batch_id"],
+                detail="builtin:1;field:interest;pattern:interest",
+            )
+            return ACTION_POSTED
+        if matches_builtin_huabei_discard(source):
+            _create_ledger_entry(
+                conn,
+                entry_type=TYPE_TRANSFER,
+                amount_cents=source["amount_cents"],
+                category="",
+                txn_date=source["occurred_at"][:10],
+                source_transaction_id=source["id"],
+                batch_id=source["batch_id"],
+                note="",
+            )
+            return ACTION_POSTED
         if _is_transfer(source):
             _create_ledger_entry(
                 conn,

@@ -1,35 +1,40 @@
-<div class="card card-inner" id="risk-{{ item.review_id }}">
-    <div class="section-head">
-        <h3>
-            {{ high_risk_labels.get(item.reason, item.reason) }}
+<div class="card card-inner risk-card" id="risk-{{ item.review_id }}">
+    <div class="risk-head">
+        <div>
+            <h3>{{ high_risk_labels.get(item.reason, item.reason) }}</h3>
             <small>#{{ item.review_id }} · {{ "支付宝" if item.platform == "alipay" else "微信" }} · {{ item.occurred_at }}</small>
-        </h3>
+        </div>
         <span class="state-pill">{{ "%.2f"|format(item.amount_cents / 100) }} 元</span>
     </div>
-    <p class="note-text">{{ item.counterparty or "（无对方）" }} · {{ item.item_desc or "—" }} · {{ item.source_txn_id }}</p>
+    <p class="risk-meta">{{ item.counterparty or "（无对方）" }} · {{ item.item_desc or "—" }} · {{ item.source_txn_id }}</p>
 
     {% if item.reason == "refund_pending" %}
         {% if item.candidates %}
-            <form method="post" action="/inbox/refund/link" class="form-grid"
+            <form method="post" action="/inbox/refund/link"
                   hx-post="/inbox/refund/link" hx-target="#high-risk-section" hx-swap="outerHTML">
                 <input type="hidden" name="review_id" value="{{ item.review_id }}">
                 <input type="hidden" name="refund_source_id" value="{{ item.source_id }}">
                 <input type="hidden" name="risk_page" value="{{ risk_page }}">
-                <div class="full-width">
+                <div class="table-wrap">
+                <table class="risk-table">
+                    <thead>
+                        <tr><th>选</th><th>账本</th><th>日期</th><th>商户</th><th>原金额</th><th>已退</th><th>可退</th><th>匹配依据</th></tr>
+                    </thead>
+                    <tbody>
                     {% for cand in item.candidates %}
-                        <label class="radio-row">
-                            <input type="radio" name="original_ledger_id" value="{{ cand.ledger_id }}" required>
-                            <span>
-                                <strong>账本 #{{ cand.ledger_id }}</strong> · {{ cand.txn_date }} · {{ cand.counterparty or "（无对方）" }} ·
-                                {{ "%.2f"|format(cand.amount_cents / 100) }} 元
-                                {% if cand.source_txn_id %}<small> · 单号 {{ cand.source_txn_id }}</small>{% endif %}
-                                {% if cand.already_refunded_cents %}
-                                    （已退 {{ "%.2f"|format(cand.already_refunded_cents / 100) }}，可退 {{ "%.2f"|format((cand.amount_cents - cand.already_refunded_cents) / 100) }}）
-                                {% endif %}
-                                · <em>{{ cand.match_reason }}</em>
-                            </span>
-                        </label>
+                        <tr>
+                            <td><input type="radio" name="original_ledger_id" value="{{ cand.ledger_id }}" required></td>
+                            <td>#{{ cand.ledger_id }}</td>
+                            <td>{{ cand.txn_date }}</td>
+                            <td>{{ cand.counterparty or "—" }}</td>
+                            <td>{{ "%.2f"|format(cand.amount_cents / 100) }}</td>
+                            <td>{{ "%.2f"|format(cand.already_refunded_cents / 100) }}</td>
+                            <td>{{ "%.2f"|format((cand.amount_cents - cand.already_refunded_cents) / 100) }}</td>
+                            <td><small>{{ cand.match_reason }}{% if cand.source_txn_id %} · {{ cand.source_txn_id }}{% endif %}</small></td>
+                        </tr>
                     {% endfor %}
+                    </tbody>
+                </table>
                 </div>
                 <button type="submit" class="primary-action" hx-disabled-elt="this">关联退款</button>
             </form>
@@ -43,12 +48,11 @@
             </div>
         {% endif %}
     {% elif item.reason == "withdrawal" %}
-        <form method="post" action="/inbox/resolve" class="form-grid high-risk-resolve-form withdrawal-form"
+        <form method="post" action="/inbox/resolve" class="risk-form high-risk-resolve-form withdrawal-form"
               hx-post="/inbox/resolve" hx-target="#high-risk-section" hx-swap="outerHTML">
             <input type="hidden" name="review_id" value="{{ item.review_id }}">
             <input type="hidden" name="risk_page" value="{{ risk_page }}">
-            <label>
-                用途
+            <label>用途
                 <select name="purpose" required class="high-risk-purpose-select">
                     <option value="">选择用途</option>
                     {% for value in withdrawal_purposes %}
@@ -56,8 +60,7 @@
                     {% endfor %}
                 </select>
             </label>
-            <label>
-                分类
+            <label>分类
                 <select name="category" required class="high-risk-category-select">
                     {% set option_selected_type = "consumption" %}
                     {% set option_selected_category = "" %}
@@ -67,12 +70,11 @@
             <button type="submit" class="primary-action" hx-disabled-elt="this">确认用途</button>
         </form>
     {% else %}
-        <form method="post" action="/inbox/resolve" class="form-grid high-risk-resolve-form person-form"
+        <form method="post" action="/inbox/resolve" class="risk-form high-risk-resolve-form person-form"
               hx-post="/inbox/resolve" hx-target="#high-risk-section" hx-swap="outerHTML">
             <input type="hidden" name="review_id" value="{{ item.review_id }}">
             <input type="hidden" name="risk_page" value="{{ risk_page }}">
-            <label>
-                定性为
+            <label>定性为
                 <select name="entry_type" required class="high-risk-type-select">
                     <option value="">选择类型</option>
                     {% for value, label in type_labels.items() %}
@@ -80,8 +82,7 @@
                     {% endfor %}
                 </select>
             </label>
-            <label>
-                分类
+            <label>分类
                 <select name="category" required class="high-risk-category-select">
                     {% set option_selected_type = "" %}
                     {% set option_selected_category = "" %}
