@@ -1,0 +1,76 @@
+<div class="card card-inner" id="risk-{{ item.review_id }}">
+    <div class="section-head">
+        <h3>
+            {{ high_risk_labels.get(item.reason, item.reason) }}
+            <small>#{{ item.review_id }} · {{ "支付宝" if item.platform == "alipay" else "微信" }} · {{ item.occurred_at }}</small>
+        </h3>
+        <span class="state-pill">{{ "%.2f"|format(item.amount_cents / 100) }} 元</span>
+    </div>
+    <p class="note-text">{{ item.counterparty or "（无对方）" }} · {{ item.item_desc or "—" }} · {{ item.source_txn_id }}</p>
+
+    {% if item.reason == "refund_pending" %}
+        {% if item.candidates %}
+            <form method="post" action="/inbox/refund/link" class="form-grid"
+                  hx-post="/inbox/refund/link" hx-target="#high-risk-section" hx-swap="outerHTML">
+                <input type="hidden" name="review_id" value="{{ item.review_id }}">
+                <input type="hidden" name="refund_source_id" value="{{ item.source_id }}">
+                <div class="full-width">
+                    {% for cand in item.candidates %}
+                        <label class="radio-row">
+                            <input type="radio" name="original_ledger_id" value="{{ cand.ledger_id }}" required>
+                            <span>
+                                {{ cand.txn_date }} · {{ cand.counterparty or "（无对方）" }} ·
+                                {{ "%.2f"|format(cand.amount_cents / 100) }} 元
+                                {% if cand.already_refunded_cents %}
+                                    （已退 {{ "%.2f"|format(cand.already_refunded_cents / 100) }}，可退 {{ "%.2f"|format((cand.amount_cents - cand.already_refunded_cents) / 100) }}）
+                                {% endif %}
+                                · <em>{{ cand.match_reason }}</em>
+                            </span>
+                        </label>
+                    {% endfor %}
+                </div>
+                <button type="submit" class="primary-action" hx-disabled-elt="this">关联退款</button>
+            </form>
+        {% else %}
+            <div class="refund-hint">
+                <p class="note-text">未找到候选原消费（90 天窗口内）。<strong>常见原因：这笔退款对应的消费还在分类区未确认。</strong>请先到下方分类区把对应商户确认为「消费」，再回来刷新候选。</p>
+                <button type="button" class="quiet"
+                        hx-get="/inbox/refund-candidates/{{ item.review_id }}"
+                        hx-target="#risk-{{ item.review_id }}" hx-swap="outerHTML"
+                        hx-disabled-elt="this">刷新候选</button>
+            </div>
+        {% endif %}
+    {% elif item.reason == "withdrawal" %}
+        <form method="post" action="/inbox/resolve" class="form-grid"
+              hx-post="/inbox/resolve" hx-target="#high-risk-section" hx-swap="outerHTML">
+            <input type="hidden" name="review_id" value="{{ item.review_id }}">
+            <label>
+                用途
+                <select name="purpose" required>
+                    <option value="">选择用途</option>
+                    {% for value in withdrawal_purposes %}
+                        <option value="{{ value }}">{{ withdrawal_purpose_labels.get(value, value) }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label>分类 <input type="text" name="category" list="cat-options"></label>
+            <button type="submit" class="primary-action" hx-disabled-elt="this">确认用途</button>
+        </form>
+    {% else %}
+        <form method="post" action="/inbox/resolve" class="form-grid"
+              hx-post="/inbox/resolve" hx-target="#high-risk-section" hx-swap="outerHTML">
+            <input type="hidden" name="review_id" value="{{ item.review_id }}">
+            <label>
+                定性为
+                <select name="entry_type" required>
+                    <option value="">选择类型</option>
+                    {% for value, label in type_labels.items() %}
+                        <option value="{{ value }}">{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label>分类 <input type="text" name="category" list="cat-options"></label>
+            <button type="submit" class="primary-action" hx-disabled-elt="this">确认定性</button>
+        </form>
+    {% endif %}
+</div>

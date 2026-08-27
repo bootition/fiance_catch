@@ -18,6 +18,7 @@ pytest-run-*
 .opencode/
 .planning/
 .worktrees/
+.workbuddy/
 
 # --- 会话产物（planning-with-files 生成，永不提交）---
 task_plan.md

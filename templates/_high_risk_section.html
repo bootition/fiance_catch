@@ -1,0 +1,15 @@
+<section class="card card-emphasis" id="high-risk-section">
+    {% if flash %}<p class="flash-note">{{ flash }}</p>{% endif %}
+    <div class="section-head">
+        <h2>高风险区</h2>
+        <span class="state-pill">需逐笔处理</span>
+    </div>
+    {% if high_risk %}
+        {% for item in high_risk %}
+            {% include "_risk_card.html" %}
+        {% endfor %}
+        <p class="note-text">提现须逐笔选用途、退款须关联原消费、人际转账须人工定性——这些记录不参与批量确认。</p>
+    {% else %}
+        <p>高风险区暂无待处理项。</p>
+    {% endif %}
+</section>

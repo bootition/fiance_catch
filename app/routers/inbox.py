@@ -131,6 +131,35 @@ def inbox(request: Request):
     )
 
 
+def _pending_badge_oob() -> str:
+    """导航「待确认」计数的 hx-swap-oob 片段（局部刷新时同步更新）。"""
+    n = _pending_count()
+    text = f"（{n}）" if n > 0 else ""
+    return (
+        f'<span id="nav-pending-count" hx-swap-oob="innerHTML">{text}</span>'
+    )
+
+
+def _section_response(request: Request, template_name: str, flash: str | None) -> HTMLResponse:
+    """渲染局部片段（section / 卡片）+ 追加待确认计数 OOB 片段。"""
+    context = _inbox_context(request, flash)
+    body = templates.env.get_template(template_name).render(context)
+    return HTMLResponse(body + _pending_badge_oob())
+
+
+@router.get("/inbox/refund-candidates/{review_id}", response_class=HTMLResponse)
+def inbox_refund_candidates(request: Request, review_id: int):
+    """单条退款卡片刷新：重新查询 90 天窗口候选；待办已处理则返回空片段（卡片被移除）。"""
+    settings = current_settings()
+    items = _high_risk_items(settings.db_path)
+    item = next((i for i in items if i["review_id"] == review_id), None)
+    if item is None:
+        return HTMLResponse("")
+    context = {**_inbox_context(request, None), "item": item}
+    body = templates.env.get_template("_risk_card.html").render(context)
+    return HTMLResponse(body)
+
+
 @router.post("/inbox/confirm", response_class=HTMLResponse)
 async def inbox_confirm(
     request: Request,
@@ -160,9 +189,7 @@ async def inbox_confirm(
         )
     except ValueError as exc:
         flash = f"批量确认失败：{exc}"
-    return templates.TemplateResponse(
-        request, "inbox.html", _inbox_context(request, flash)
-    )
+    return _section_response(request, "_category_section.html", flash)
 
 
 @router.post("/inbox/refund/link", response_class=HTMLResponse)
@@ -183,9 +210,7 @@ async def inbox_refund_link(
         )
     except ValueError as exc:
         flash = f"退款关联失败：{exc}"
-    return templates.TemplateResponse(
-        request, "inbox.html", _inbox_context(request, flash)
-    )
+    return _section_response(request, "_high_risk_section.html", flash)
 
 
 @router.post("/inbox/resolve", response_class=HTMLResponse)
@@ -208,6 +233,4 @@ async def inbox_resolve(
         flash = f"已定性 #{result.entry_id}（{HIGH_RISK_LABELS.get(result.reason, result.reason)}）"
     except ValueError as exc:
         flash = f"处理失败：{exc}"
-    return templates.TemplateResponse(
-        request, "inbox.html", _inbox_context(request, flash)
-    )
+    return _section_response(request, "_high_risk_section.html", flash)
