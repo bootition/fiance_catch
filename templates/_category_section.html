@@ -3,6 +3,7 @@
         <h2>分类区</h2>
         <span class="state-pill">按商户分组批量确认</span>
     </div>
+    <p class="note-text group-rule-note">合并规则：<strong>商户/交易对方 + 平台 + 收支方向</strong> 完全相同才会合并。若合并结果不合适，展开该组明细后可在任意一笔点「单独处理」，只处理这一笔。</p>
     <form class="search-form"
           hx-get="/inbox/category" hx-target="#category-table-area" hx-swap="outerHTML"
           hx-trigger="input changed delay:300ms, search, submit">

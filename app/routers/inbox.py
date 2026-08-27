@@ -2,7 +2,7 @@ from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from ..db import connect
-from ..decisions.confirm import confirm_group, group_review_items_paged
+from ..decisions.confirm import confirm_group, confirm_review_item, group_review_items_paged
 from ..decisions.constants import (
     CATEGORY_OPTIONS_BY_TYPE,
     FORMAL_CATEGORIES,
@@ -237,6 +237,49 @@ def inbox_high_risk(request: Request, page: int = 1):
     return _section_response(request, "_high_risk_section.html", None, risk_page=page)
 
 
+@router.get("/inbox/item-form/{review_id}", response_class=HTMLResponse)
+def inbox_item_form(request: Request, review_id: int, cat_page: int = 1, cat_q: str = ""):
+    """返回分组明细中某一笔的单独处理表单（点开时按需加载，不增加整页 DOM）。"""
+    settings = current_settings()
+    with connect(settings.db_path) as conn:
+        row = conn.execute(
+            """
+            SELECT
+              rq.id AS review_id,
+              rq.reason,
+              rq.suggested_category,
+              rq.suggested_type,
+              st.counterparty,
+              st.direction,
+              st.occurred_at,
+              st.amount_cents,
+              st.item_desc
+            FROM review_queue AS rq
+            JOIN source_transactions AS st ON st.id = rq.source_transaction_id
+            WHERE rq.id = ?
+              AND rq.status = 'pending'
+              AND rq.reason IN ('unmatched', 'observing_rule')
+            """,
+            (int(review_id),),
+        ).fetchone()
+    if row is None:
+        return HTMLResponse('<span class="note-text">该笔已处理，刷新后消失。</span>')
+    item = dict(row)
+    category_options = list_category_options(settings.db_path)
+    context = {
+        "request": request,
+        "item": item,
+        "cat_page": max(1, int(cat_page)),
+        "cat_q": cat_q or "",
+        "type_labels": TYPE_LABELS,
+        "allowed_types_by_direction": ALLOWED_TYPES_BY_DIRECTION,
+        "category_options_by_type": CATEGORY_OPTIONS_BY_TYPE,
+        "custom_category_options": [c for c in category_options if c not in FORMAL_CATEGORIES],
+    }
+    body = templates.env.get_template("_single_confirm_form.html").render(context)
+    return HTMLResponse(body)
+
+
 @router.get("/inbox/category", response_class=HTMLResponse)
 def inbox_category(request: Request, page: int = 1, q: str = ""):
     """分类区翻页 / 搜索局部刷新：仅返回分类区表格区域。"""
@@ -275,6 +318,30 @@ def inbox_refund_candidates(request: Request, review_id: int):
     context = {**_inbox_context(request, None), "item": item}
     body = templates.env.get_template("_risk_card.html").render(context)
     return HTMLResponse(body)
+
+
+@router.post("/inbox/confirm-item", response_class=HTMLResponse)
+async def inbox_confirm_item(
+    request: Request,
+    review_id: int = Form(...),
+    entry_type: str = Form(...),
+    category: str = Form(...),
+    cat_page: int = Form(1),
+    cat_q: str = Form(""),
+):
+    """只处理分组中的单笔交易（同组其他笔保持待确认）。"""
+    settings = current_settings()
+    try:
+        result = confirm_review_item(
+            settings.db_path,
+            review_id,
+            entry_type=entry_type,
+            category=category,
+        )
+        flash = f"已单独确认 #{review_id}（{result.confirmed} 笔）"
+    except ValueError as exc:
+        flash = f"单笔确认失败：{exc}"
+    return _section_response(request, "_category_table.html", flash, cat_page=cat_page, cat_q=cat_q)
 
 
 @router.post("/inbox/confirm", response_class=HTMLResponse)

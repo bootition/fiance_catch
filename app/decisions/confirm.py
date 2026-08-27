@@ -66,6 +66,46 @@ def _rule_condition_for_group(group: Group) -> tuple[str, str]:
     return "item_desc", _most_common_item_desc(group.items)
 
 
+def _validate_confirm_choice(direction: str, entry_type: str, category: str) -> str:
+    """分类确认的类型/分类约束：方向已知，类型必须匹配；消费/收入必须给分类。"""
+    entry_type = (entry_type or "").strip()
+    category = (category or "").strip()
+    if entry_type not in BULK_TYPES:
+        raise ValueError(f"invalid entry_type for bulk confirm: {entry_type!r}")
+    direction = (direction or "").strip()
+    allowed = DIRECTION_ALLOWED_BULK_TYPES.get(direction, frozenset())
+    if entry_type not in allowed:
+        label = {"income": "收入", "expense": "支出", "neutral": "不计收支"}.get(direction, direction)
+        raise ValueError(f"{label}方向的交易不能确认为该类型")
+    if entry_type == TYPE_TRANSFER:
+        category = ""
+    elif not category:
+        raise ValueError("消费/收入必须选择分类")
+    return category
+
+
+def _sync_batch_pending_counts(conn, batch_ids) -> None:
+    for batch_id in batch_ids:
+        if batch_id is None:
+            continue
+        real_pending = int(
+            conn.execute(
+                """
+                SELECT COUNT(*) AS c FROM review_queue
+                WHERE status = 'pending'
+                  AND source_transaction_id IN (
+                    SELECT id FROM source_transactions WHERE batch_id = ?
+                  )
+                """,
+                (batch_id,),
+            ).fetchone()["c"]
+        )
+        conn.execute(
+            "UPDATE import_batches SET pending_count = ? WHERE id = ?",
+            (real_pending, batch_id),
+        )
+
+
 @dataclass(frozen=True)
 class GroupItem:
     review_id: int
@@ -249,19 +289,7 @@ def confirm_group(
                 f"high-risk reasons cannot be bulk confirmed: {sorted(high_risk)}"
             )
 
-        entry_type = (entry_type or "").strip()
-        category = (category or "").strip()
-        if entry_type not in BULK_TYPES:
-            raise ValueError(f"invalid entry_type for bulk confirm: {entry_type!r}")
-        direction = (direction or "").strip()
-        allowed = DIRECTION_ALLOWED_BULK_TYPES.get(direction, frozenset())
-        if entry_type not in allowed:
-            label = {"income": "收入", "expense": "支出", "neutral": "不计收支"}.get(direction, direction)
-            raise ValueError(f"{label}方向的交易不能确认为该类型")
-        if entry_type == TYPE_TRANSFER:
-            category = ""
-        elif not category:
-            raise ValueError("消费/收入必须选择分类")
+        category = _validate_confirm_choice(direction, entry_type, category)
 
         rule_id = None
         if len(group.items) >= 2:
@@ -320,29 +348,85 @@ def confirm_group(
                 # 本组创建的观察规则：每条确认计一次确认数（规格 §3.5，红队修复 2026-08-14）
                 _bump_rule_stats(conn, rule_id, confirmed=True)
 
-        affected_batches = {
-            item.batch_id for item in group.items if item.batch_id is not None
-        }
-        for batch_id in affected_batches:
-            real_pending = int(
-                conn.execute(
-                    """
-                    SELECT COUNT(*) AS c FROM review_queue
-                    WHERE status = 'pending'
-                      AND source_transaction_id IN (
-                        SELECT id FROM source_transactions WHERE batch_id = ?
-                      )
-                    """,
-                    (batch_id,),
-                ).fetchone()["c"]
-            )
-            conn.execute(
-                "UPDATE import_batches SET pending_count = ? WHERE id = ?",
-                (real_pending, batch_id),
-            )
+        _sync_batch_pending_counts(
+            conn,
+            {item.batch_id for item in group.items if item.batch_id is not None},
+        )
 
         conn.commit()
         return ConfirmResult(confirmed=len(group.items), rule_id=rule_id)
+
+
+def confirm_review_item(
+    db_path,
+    review_id: int,
+    *,
+    entry_type: str,
+    category: str,
+) -> ConfirmResult:
+    """只处理分组中的某一笔（不处理同组其他笔；不创建规则）。
+
+    用于用户反馈：合并规则 = 商户 × 平台 × 收支方向；当合并不恰当时，
+    展开明细后可逐笔单独确认。
+    """
+    with connect(db_path) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        review = conn.execute(
+            """
+            SELECT * FROM review_queue
+            WHERE id = ? AND status = 'pending'
+            """,
+            (int(review_id),),
+        ).fetchone()
+        if review is None:
+            raise ValueError(f"no pending review: {review_id}")
+        if review["reason"] not in ALLOWED_BULK_REASONS:
+            raise ValueError(f"review {review_id} is not in the classification zone")
+
+        source = conn.execute(
+            "SELECT * FROM source_transactions WHERE id = ?",
+            (review["source_transaction_id"],),
+        ).fetchone()
+        if source is None:
+            raise ValueError(f"source transaction not found: {review['source_transaction_id']}")
+
+        category = _validate_confirm_choice(
+            source["direction"], entry_type, category
+        )
+        entry_id = _create_ledger_entry(
+            conn,
+            entry_type=entry_type,
+            amount_cents=source["amount_cents"],
+            category=category,
+            txn_date=source["occurred_at"][:10],
+            source_transaction_id=source["id"],
+            batch_id=source["batch_id"],
+            note="",
+        )
+        conn.execute(
+            """
+            UPDATE review_queue
+            SET status = 'resolved',
+                resolved_ledger_id = ?,
+                resolved_at = datetime('now')
+            WHERE id = ? AND status = 'pending'
+            """,
+            (entry_id, review_id),
+        )
+        _add_audit_event(
+            conn,
+            event_type="bulk_confirm",
+            ref_ledger_id=entry_id,
+            ref_batch_id=source["batch_id"],
+            detail=(
+                f"scope:single;review:{review_id};"
+                f"counterparty:{source['counterparty']};direction:{source['direction']};"
+                f"type:{entry_type};category:{category}"
+            ),
+        )
+        _sync_batch_pending_counts(conn, {source["batch_id"]})
+        conn.commit()
+        return ConfirmResult(confirmed=1, rule_id=None)
 
 
 def promote_rule(db_path, rule_id: int) -> bool:

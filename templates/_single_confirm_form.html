@@ -1,0 +1,38 @@
+<form method="post" action="/inbox/confirm-item" class="inline-form single-confirm-form"
+      hx-post="/inbox/confirm-item" hx-target="#category-table-area" hx-swap="outerHTML">
+    <input type="hidden" name="review_id" value="{{ item.review_id }}">
+    <input type="hidden" name="cat_page" value="{{ cat_page }}">
+    <input type="hidden" name="cat_q" value="{{ cat_q }}">
+    {% set allowed_types = allowed_types_by_direction.get(item.direction, allowed_types_by_direction["expense"]) %}
+    {% if allowed_types | length == 1 %}
+        {% set only_type = allowed_types[0] %}
+        <input type="hidden" name="entry_type" value="{{ only_type[0] }}">
+        <span class="state-pill type-locked-pill">{{ only_type[1] }}</span>
+    {% else %}
+        <select name="entry_type" required class="single-type-select">
+            {% for value, label in allowed_types %}
+                <option value="{{ value }}" {% if item.suggested_type == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </select>
+    {% endif %}
+    <select name="category" required class="single-category-select">
+        <option value="">选择分类</option>
+        <optgroup label="消费分类" data-for-type="consumption">
+            {% for cat in category_options_by_type["consumption"] %}
+                <option value="{{ cat }}" {% if item.suggested_type == "consumption" and item.suggested_category == cat %}selected{% endif %}>{{ cat }}</option>
+            {% endfor %}
+            {% for cat in custom_category_options %}
+                <option value="{{ cat }}" {% if item.suggested_type == "consumption" and item.suggested_category == cat %}selected{% endif %}>{{ cat }}</option>
+            {% endfor %}
+        </optgroup>
+        <optgroup label="收入分类" data-for-type="income">
+            {% for cat in category_options_by_type["income"] %}
+                <option value="{{ cat }}" {% if item.suggested_type == "income" and item.suggested_category == cat %}selected{% endif %}>{{ cat }}</option>
+            {% endfor %}
+            {% for cat in custom_category_options %}
+                <option value="{{ cat }}" {% if item.suggested_type == "income" and item.suggested_category == cat %}selected{% endif %}>{{ cat }}</option>
+            {% endfor %}
+        </optgroup>
+    </select>
+    <button type="submit" class="secondary" hx-disabled-elt="this">确认此笔</button>
+</form>

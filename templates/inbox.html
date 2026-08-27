@@ -33,21 +33,47 @@
         }
     }
 
-    function initBulkCategories(root) {
-        (root || document).querySelectorAll('.bulk-confirm-form').forEach(function (form) {
+    function initCategoryForms(root) {
+        var forms = (root || document).querySelectorAll('.bulk-confirm-form, .single-confirm-form');
+        forms.forEach(function (form) {
             syncBulkCategory(form);
         });
     }
 
-    document.addEventListener('DOMContentLoaded', function () { initBulkCategories(document); });
+    document.addEventListener('DOMContentLoaded', function () { initCategoryForms(document); });
     document.addEventListener('change', function (event) {
-        if (event.target && event.target.matches('.bulk-confirm-form select[name="entry_type"]')) {
+        if (event.target && event.target.matches('.bulk-confirm-form select[name="entry_type"], .single-confirm-form select[name="entry_type"]')) {
             syncBulkCategory(event.target.closest('form'));
         }
     });
     document.body.addEventListener('htmx:afterSwap', function (event) {
         var root = (event.detail && event.detail.elt) || document;
-        initBulkCategories(root);
+        initCategoryForms(root);
+    });
+
+    var pendingScrollAnchor = null;
+    document.body.addEventListener('htmx:beforeSwap', function (event) {
+        var target = event.detail && event.detail.target;
+        if (!target || !target.id) return;
+        if (target.id !== 'category-table-area' && target.id !== 'high-risk-section' && target.id.indexOf('risk-') !== 0) {
+            return;
+        }
+        var rect = target.getBoundingClientRect();
+        pendingScrollAnchor = {
+            targetId: target.id,
+            targetTop: rect.top,
+            scrollY: window.scrollY
+        };
+    });
+    document.body.addEventListener('htmx:afterSwap', function (event) {
+        if (!pendingScrollAnchor) return;
+        var current = document.getElementById(pendingScrollAnchor.targetId);
+        if (current) {
+            var rect = current.getBoundingClientRect();
+            var delta = rect.top - pendingScrollAnchor.targetTop;
+            window.scrollTo(0, pendingScrollAnchor.scrollY + delta);
+        }
+        pendingScrollAnchor = null;
     });
 })();
 </script>

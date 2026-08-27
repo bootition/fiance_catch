@@ -9,7 +9,7 @@ import app.main as main
 from app.db import init_db
 from app.decisions.constants import CATEGORY_DAILY_MEALS, TYPE_CONSUMPTION
 from app.importing.service import import_file
-from app.ledger_repo import list_review_queue
+from app.ledger_repo import list_ledger_entries, list_review_queue
 from app.refunds.matching import find_refund_candidates
 from app.settings import Settings
 
@@ -360,3 +360,56 @@ def test_inbox_direction_locks_entry_type(client):
         },
     )
     assert "已确认 2 项" in right.text
+
+
+def test_inbox_single_item_confirm_inside_group(client):
+    """分组只按商户×平台×方向；组内每笔可单独处理，其他笔保持待确认。"""
+    c, settings = client
+    _upload(
+        c,
+        [
+            "2026-07-01 10:00:00,收入,x***9,/,闲鱼资料A,收入,10.00,余额宝,交易成功,TXN-SINGLE-1,,",
+            "2026-07-02 10:00:00,收入,x***9,/,闲鱼资料B,收入,20.00,余额宝,交易成功,TXN-SINGLE-2,,",
+            "2026-07-03 10:00:00,收入,x***9,/,闲鱼资料C,收入,30.00,余额宝,交易成功,TXN-SINGLE-3,,",
+        ],
+    )
+    inbox = c.get("/inbox")
+    assert "合并规则" in inbox.text
+    assert "商户/交易对方 + 平台 + 收支方向" in inbox.text
+    assert inbox.text.count("/inbox/item-form/") == 3
+
+    review_id = _review_id_by_txn(settings, "TXN-SINGLE-2")
+    form = c.get(f"/inbox/item-form/{review_id}?cat_page=1&cat_q=")
+    assert form.status_code == 200
+    assert 'id="category-table-area"' not in form.text  # 只返回单笔表单片段
+    assert "确认此笔" in form.text
+
+    response = c.post(
+        "/inbox/confirm-item",
+        data={
+            "review_id": review_id,
+            "entry_type": "income",
+            "category": "副业收入",
+            "cat_page": 1,
+            "cat_q": "",
+        },
+    )
+    assert response.status_code == 200
+    assert f"已单独确认 #{review_id}" in response.text
+    assert len(list_ledger_entries(settings.db_path)) == 1
+    pending = list_review_queue(settings.db_path)
+    assert len(pending) == 2
+    assert "确认 2 项" in response.text
+
+    # 已处理单笔的表单不再可用
+    gone = c.get(f"/inbox/item-form/{review_id}")
+    assert "该笔已处理" in gone.text
+
+
+def test_inbox_has_scroll_anchor_script(client):
+    """处理后保持原滚动位置：模板包含视口锚定脚本。"""
+    c, _ = client
+    inbox = c.get("/inbox")
+    assert "pendingScrollAnchor" in inbox.text
+    assert "getBoundingClientRect" in inbox.text
+    assert "overflow-anchor" not in inbox.text  # CSS 中声明

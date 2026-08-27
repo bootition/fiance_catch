@@ -975,3 +975,10 @@ tbody tr:hover {
 .period-jump input[type="date"] {
     width: 160px;
 }
+
+
+/* 处理待确认后保持原滚动位置：禁用浏览器原生滚动锚定，JS 做视口锚定 */
+#high-risk-section,
+#category-table-area {
+    overflow-anchor: none;
+}
