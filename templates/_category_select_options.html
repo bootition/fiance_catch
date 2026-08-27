@@ -1,0 +1,22 @@
+<option value="">选择分类</option>
+<optgroup label="消费分类" data-for-type="consumption">
+    {% for cat in category_options_by_type["consumption"] %}
+        <option value="{{ cat }}" {% if option_selected_type == "consumption" and option_selected_category == cat %}selected{% endif %}>{{ cat }}</option>
+    {% endfor %}
+    {% for cat in custom_category_options %}
+        <option value="{{ cat }}" {% if option_selected_type == "consumption" and option_selected_category == cat %}selected{% endif %}>{{ cat }}</option>
+    {% endfor %}
+</optgroup>
+<optgroup label="收入分类" data-for-type="income">
+    {% for cat in category_options_by_type["income"] %}
+        <option value="{{ cat }}" {% if option_selected_type == "income" and option_selected_category == cat %}selected{% endif %}>{{ cat }}</option>
+    {% endfor %}
+    {% for cat in custom_category_options %}
+        <option value="{{ cat }}" {% if option_selected_type == "income" and option_selected_category == cat %}selected{% endif %}>{{ cat }}</option>
+    {% endfor %}
+</optgroup>
+<optgroup label="调拨分类" data-for-type="transfer">
+    {% for cat in category_options_by_type["transfer"] %}
+        <option value="{{ cat }}" {% if option_selected_type == "transfer" and option_selected_category == cat %}selected{% endif %}>{{ cat }}</option>
+    {% endfor %}
+</optgroup>

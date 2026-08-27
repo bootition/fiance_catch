@@ -34,17 +34,53 @@
         }
     }
 
+    function syncHighRiskCategory(form) {
+        var catSelect = form.querySelector('select[name="category"]');
+        if (!catSelect) return;
+        var entryType;
+        if (form.classList.contains('withdrawal-form')) {
+            var purpose = form.querySelector('select[name="purpose"]');
+            if (!purpose) return;
+            entryType = purpose.value === 'cash_expense' ? 'consumption' : 'transfer';
+        } else {
+            var typeControl = form.querySelector('select[name="entry_type"]');
+            if (!typeControl) return;
+            entryType = typeControl.value;
+        }
+        if (!entryType) return;
+        catSelect.querySelectorAll('optgroup[data-for-type]').forEach(function (group) {
+            var visible = group.dataset.forType === entryType;
+            group.disabled = !visible;
+            group.hidden = !visible;
+        });
+        catSelect.required = true;
+        var allowed = Array.prototype.slice.call(
+            catSelect.querySelectorAll('optgroup[data-for-type="' + entryType + '"] option')
+        ).map(function (option) { return option.value; });
+        if (allowed.length && allowed.indexOf(catSelect.value) === -1) {
+            catSelect.value = allowed[0];
+        }
+    }
+
     function initCategoryForms(root) {
-        var forms = (root || document).querySelectorAll('.bulk-confirm-form, .single-confirm-form');
+        var forms = (root || document).querySelectorAll('.bulk-confirm-form, .single-confirm-form, .high-risk-resolve-form');
         forms.forEach(function (form) {
-            syncBulkCategory(form);
+            if (form.classList.contains('high-risk-resolve-form')) {
+                syncHighRiskCategory(form);
+            } else {
+                syncBulkCategory(form);
+            }
         });
     }
 
     document.addEventListener('DOMContentLoaded', function () { initCategoryForms(document); });
     document.addEventListener('change', function (event) {
-        if (event.target && event.target.matches('.bulk-confirm-form select[name="entry_type"], .single-confirm-form select[name="entry_type"]')) {
+        if (!event.target || !event.target.matches) return;
+        if (event.target.matches('.bulk-confirm-form select[name="entry_type"], .single-confirm-form select[name="entry_type"]')) {
             syncBulkCategory(event.target.closest('form'));
+        }
+        if (event.target.matches('.high-risk-resolve-form select[name="entry_type"], .high-risk-resolve-form select[name="purpose"]')) {
+            syncHighRiskCategory(event.target.closest('form'));
         }
     });
     document.body.addEventListener('htmx:afterSwap', function (event) {

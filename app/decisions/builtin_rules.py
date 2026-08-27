@@ -74,6 +74,19 @@ def matches_builtin_side_income(source) -> str | None:
     return None
 
 
+def matches_builtin_jd(source):
+    """京东数字编号小金额 → 日常三餐（用户指引 2026-08-28）。"""
+    if source["direction"] != "expense":
+        return None
+    counterparty = str(source["counterparty"] or "")
+    item_desc = str(source["item_desc"] or "").strip()
+    if "京东" not in counterparty and "京东" not in item_desc:
+        return None
+    if re.fullmatch(r"\d+", item_desc) and int(source["amount_cents"]) < 3500:
+        return "jd_numeric_small"
+    return None
+
+
 def matches_builtin_meituan(source):
     """美团消费形态识别（用户指引 2026-08-27）。
 
@@ -215,6 +228,20 @@ def apply_builtin_rules_to_pending(db_path) -> BuiltinApplyResult:
                     entry_type=TYPE_CONSUMPTION,
                     category=category,
                     match_field="meituan",
+                )
+                _sync_batch_pending(conn, source["batch_id"])
+                posted += 1
+                continue
+            jd_pattern = matches_builtin_jd(source)
+            if jd_pattern is not None:
+                _post_builtin(
+                    conn,
+                    source,
+                    source["review_id"],
+                    jd_pattern,
+                    entry_type=TYPE_CONSUMPTION,
+                    category="日常三餐",
+                    match_field="jd",
                 )
                 _sync_batch_pending(conn, source["batch_id"])
                 posted += 1

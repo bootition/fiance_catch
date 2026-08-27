@@ -18,6 +18,7 @@ from .constants import (
     REASON_OTHER_NEUTRAL,
     REASON_PERSON_TRANSFER,
     REASON_WITHDRAWAL,
+    TRANSFER_CATEGORIES,
     TYPE_CONSUMPTION,
     TYPE_INCOME,
     TYPE_TRANSFER,
@@ -122,6 +123,13 @@ def resolve_high_risk_review(
                 )
         else:
             raise ValueError(f"not a high-risk review reason: {reason}")
+
+        category = (category or "").strip()
+        if entry_type == TYPE_TRANSFER:
+            if category not in TRANSFER_CATEGORIES:
+                raise ValueError("调拨必须选择调拨专用分类")
+        elif entry_type in (TYPE_CONSUMPTION, TYPE_INCOME) and not category:
+            raise ValueError("消费/收入必须选择分类")
 
         source = conn.execute(
             "SELECT * FROM source_transactions WHERE id = ?",

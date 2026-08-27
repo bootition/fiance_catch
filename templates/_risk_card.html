@@ -43,37 +43,51 @@
             </div>
         {% endif %}
     {% elif item.reason == "withdrawal" %}
-        <form method="post" action="/inbox/resolve" class="form-grid"
+        <form method="post" action="/inbox/resolve" class="form-grid high-risk-resolve-form withdrawal-form"
               hx-post="/inbox/resolve" hx-target="#high-risk-section" hx-swap="outerHTML">
             <input type="hidden" name="review_id" value="{{ item.review_id }}">
             <input type="hidden" name="risk_page" value="{{ risk_page }}">
             <label>
                 用途
-                <select name="purpose" required>
+                <select name="purpose" required class="high-risk-purpose-select">
                     <option value="">选择用途</option>
                     {% for value in withdrawal_purposes %}
                         <option value="{{ value }}">{{ withdrawal_purpose_labels.get(value, value) }}</option>
                     {% endfor %}
                 </select>
             </label>
-            <label>分类 <input type="text" name="category" list="cat-options"></label>
+            <label>
+                分类
+                <select name="category" required class="high-risk-category-select">
+                    {% set option_selected_type = "consumption" %}
+                    {% set option_selected_category = "" %}
+                    {% include "_category_select_options.html" %}
+                </select>
+            </label>
             <button type="submit" class="primary-action" hx-disabled-elt="this">确认用途</button>
         </form>
     {% else %}
-        <form method="post" action="/inbox/resolve" class="form-grid"
+        <form method="post" action="/inbox/resolve" class="form-grid high-risk-resolve-form person-form"
               hx-post="/inbox/resolve" hx-target="#high-risk-section" hx-swap="outerHTML">
             <input type="hidden" name="review_id" value="{{ item.review_id }}">
             <input type="hidden" name="risk_page" value="{{ risk_page }}">
             <label>
                 定性为
-                <select name="entry_type" required>
+                <select name="entry_type" required class="high-risk-type-select">
                     <option value="">选择类型</option>
                     {% for value, label in type_labels.items() %}
                         <option value="{{ value }}">{{ label }}</option>
                     {% endfor %}
                 </select>
             </label>
-            <label>分类 <input type="text" name="category" list="cat-options"></label>
+            <label>
+                分类
+                <select name="category" required class="high-risk-category-select">
+                    {% set option_selected_type = "" %}
+                    {% set option_selected_category = "" %}
+                    {% include "_category_select_options.html" %}
+                </select>
+            </label>
             <button type="submit" class="primary-action" hx-disabled-elt="this">确认定性</button>
         </form>
     {% endif %}

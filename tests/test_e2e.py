@@ -732,7 +732,7 @@ def test_e2e_withdrawal_resolve_via_http(client):
 
     review = _pending_review_for(settings, "AP-20260707-001")
     assert review is not None and review["reason"] == "withdrawal"
-    response = _resolve_via_http(c, review["id"], purpose="transfer")
+    response = _resolve_via_http(c, review["id"], purpose="transfer", category="攒股收息")
     assert response.status_code == 200
     assert "已定性" in response.text
 
@@ -769,7 +769,7 @@ def test_e2e_person_transfer_resolve_via_http(client):
 
     review = _pending_review_for(settings, "AP-20260708-001")
     assert review is not None and review["reason"] == "person_transfer"
-    response = _resolve_via_http(c, review["id"], entry_type="transfer", category="")
+    response = _resolve_via_http(c, review["id"], entry_type="transfer", category="攒股收息")
     assert response.status_code == 200
     assert "已定性" in response.text
 

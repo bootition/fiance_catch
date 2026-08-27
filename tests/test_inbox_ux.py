@@ -95,7 +95,7 @@ def test_inbox_resolve_returns_high_risk_section_fragment(client):
     review_id = _review_id_by_txn(settings, "TXN-UXW-1")
     response = c.post(
         "/inbox/resolve",
-        data={"review_id": review_id, "purpose": "transfer", "category": ""},
+        data={"review_id": review_id, "purpose": "transfer", "category": "攒股收息"},
     )
     assert response.status_code == 200
     text = response.text
