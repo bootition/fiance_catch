@@ -20,6 +20,7 @@ from ..ledger_repo import (
     _enqueue_review,
     _update_batch_counts,
 )
+from .builtin_rules import matches_builtin_transport
 from .constants import (
     CATEGORY_SIDE_INCOME,
     CATEGORY_TRAVEL,
@@ -31,6 +32,7 @@ from .constants import (
     REASON_WITHDRAWAL,
     SIDE_INCOME_KEYWORDS,
     TRANSFER_KEYWORDS,
+    TYPE_CONSUMPTION,
     TYPE_INCOME,
     TYPE_TRANSFER,
     WITHDRAWAL_KEYWORDS,
@@ -151,6 +153,27 @@ def process_source(conn, source) -> str:
             priority=PRIORITY_NEUTRAL,
         )
         return ACTION_QUEUED
+
+    builtin_pattern = matches_builtin_transport(source)
+    if builtin_pattern is not None:
+        entry_id = _create_ledger_entry(
+            conn,
+            entry_type=TYPE_CONSUMPTION,
+            amount_cents=source["amount_cents"],
+            category="出行交通",
+            txn_date=source["occurred_at"][:10],
+            source_transaction_id=source["id"],
+            batch_id=source["batch_id"],
+            note="",
+        )
+        _add_audit_event(
+            conn,
+            event_type="rule_applied",
+            ref_ledger_id=entry_id,
+            ref_batch_id=source["batch_id"],
+            detail=f"builtin:1;field:item_desc;pattern:{builtin_pattern}",
+        )
+        return ACTION_POSTED
 
     rule = match_rules(
         conn,

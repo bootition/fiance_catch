@@ -11,6 +11,33 @@
             </thead>
             <tbody>
             {% for group in groups %}
+                <tr class="group-detail-row">
+                    <td colspan="8">
+                        <details class="group-detail">
+                            <summary>查看 {{ group.count }} 笔明细{% if group.item_desc_samples %}（{{ group.item_desc_samples[0] | truncate(30, true, "…") }}）{% endif %}</summary>
+                            <table class="table-inner">
+                                <thead>
+                                    <tr><th>交易时间</th><th>商品 / 说明</th><th>原始分类</th><th>金额（元）</th><th>单笔处理</th></tr>
+                                </thead>
+                                <tbody>
+                                    {% for item in group.items %}
+                                    <tr>
+                                        <td>{{ item.occurred_at }}</td>
+                                        <td>{{ item.item_desc or "—" }}</td>
+                                        <td>{{ item.raw_type or "—" }}</td>
+                                        <td>{{ "%.2f"|format(item.amount_cents / 100) }}</td>
+                                        <td class="single-item-cell">
+                                            <button type="button" class="quiet"
+                                                    hx-get="/inbox/item-form/{{ item.review_id }}?cat_page={{ cat_page }}&cat_q={{ cat_q | urlencode }}"
+                                                    hx-target="closest td" hx-swap="innerHTML">单独处理</button>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </details>
+                    </td>
+                </tr>
                 <tr class="group-main-row">
                     <td>{{ group.counterparty or "（无对方）" }}</td>
                     <td>{{ "支付宝" if group.platform == "alipay" else "微信" }}</td>
@@ -69,33 +96,6 @@
                             </select>
                             <button type="submit" class="secondary" hx-disabled-elt="this">确认 {{ group.count }} 项</button>
                         </form>
-                    </td>
-                </tr>
-                <tr class="group-detail-row">
-                    <td colspan="8">
-                        <details class="group-detail">
-                            <summary>查看 {{ group.count }} 笔明细{% if group.item_desc_samples %}（{{ group.item_desc_samples[0] | truncate(30, true, "…") }}）{% endif %}</summary>
-                            <table class="table-inner">
-                                <thead>
-                                    <tr><th>交易时间</th><th>商品 / 说明</th><th>原始分类</th><th>金额（元）</th><th>单笔处理</th></tr>
-                                </thead>
-                                <tbody>
-                                    {% for item in group.items %}
-                                    <tr>
-                                        <td>{{ item.occurred_at }}</td>
-                                        <td>{{ item.item_desc or "—" }}</td>
-                                        <td>{{ item.raw_type or "—" }}</td>
-                                        <td>{{ "%.2f"|format(item.amount_cents / 100) }}</td>
-                                        <td class="single-item-cell">
-                                            <button type="button" class="quiet"
-                                                    hx-get="/inbox/item-form/{{ item.review_id }}?cat_page={{ cat_page }}&cat_q={{ cat_q | urlencode }}"
-                                                    hx-target="closest td" hx-swap="innerHTML">单独处理</button>
-                                        </td>
-                                    </tr>
-                                    {% endfor %}
-                                </tbody>
-                            </table>
-                        </details>
                     </td>
                 </tr>
             {% endfor %}
