@@ -3,7 +3,13 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 from ..db import connect
 from ..decisions.confirm import confirm_group, group_review_items_paged
-from ..decisions.constants import TYPE_CONSUMPTION, TYPE_INCOME, TYPE_TRANSFER
+from ..decisions.constants import (
+    CATEGORY_OPTIONS_BY_TYPE,
+    FORMAL_CATEGORIES,
+    TYPE_CONSUMPTION,
+    TYPE_INCOME,
+    TYPE_TRANSFER,
+)
 from ..decisions.high_risk import (
     WITHDRAWAL_PURPOSES,
     WITHDRAWAL_PURPOSE_CASH_EXPENSE,
@@ -15,7 +21,7 @@ from ..decisions.high_risk import (
 from ..refunds.linking import link_refund_to_ledger
 from ..refunds.matching import find_refund_candidates
 from ..router_support.settings_access import current_settings
-from ..stats import list_categories_used
+from ..stats import list_category_options
 from ..templates_core import templates
 
 router = APIRouter(tags=["Inbox"])
@@ -183,6 +189,7 @@ def _inbox_context(
     cat_total_pages = max(1, (cat_total_groups + CATEGORY_PER_PAGE - 1) // CATEGORY_PER_PAGE)
     cat_page = max(1, min(int(cat_page), cat_total_pages))
 
+    category_options = list_category_options(settings.db_path)
     return {
         "request": request,
         "active_page": "inbox",
@@ -200,7 +207,9 @@ def _inbox_context(
         "cat_total_pages": cat_total_pages,
         "type_labels": TYPE_LABELS,
         "direction_labels": DIRECTION_LABELS,
-        "categories": list_categories_used(settings.db_path),
+        "categories": category_options,
+        "category_options_by_type": CATEGORY_OPTIONS_BY_TYPE,
+        "custom_category_options": [c for c in category_options if c not in FORMAL_CATEGORIES],
         "withdrawal_purposes": WITHDRAWAL_PURPOSES,
         "withdrawal_purpose_labels": WITHDRAWAL_PURPOSE_LABELS,
         "flash": flash,

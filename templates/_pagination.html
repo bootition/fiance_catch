@@ -1,0 +1,38 @@
+{% set pages = page_window(pagination_page, pagination_total_pages) %}
+<nav class="pagination pagination-full" aria-label="{{ pagination_aria_label | default('分页') }}">
+    {% if pagination_page > 1 %}
+    <button type="button" class="quiet pagination-link"
+            hx-get="{{ pagination_endpoint }}?page={{ pagination_page - 1 }}{% if pagination_q %}&q={{ pagination_q | urlencode }}{% endif %}"
+            hx-target="{{ pagination_target }}" hx-swap="outerHTML">上一页</button>
+    {% else %}
+    <button type="button" class="quiet pagination-link" disabled>上一页</button>
+    {% endif %}
+
+    {% for page_no in pages %}
+        {% if page_no is none %}
+            <span class="pagination-ellipsis">…</span>
+        {% elif page_no == pagination_page %}
+            <span class="pagination-current" aria-current="page">{{ page_no }}</span>
+        {% else %}
+            <button type="button" class="quiet pagination-link"
+                    hx-get="{{ pagination_endpoint }}?page={{ page_no }}{% if pagination_q %}&q={{ pagination_q | urlencode }}{% endif %}"
+                    hx-target="{{ pagination_target }}" hx-swap="outerHTML">{{ page_no }}</button>
+        {% endif %}
+    {% endfor %}
+
+    <span class="pagination-info">{{ pagination_info }}</span>
+
+    {% if pagination_page < pagination_total_pages %}
+    <button type="button" class="quiet pagination-link"
+            hx-get="{{ pagination_endpoint }}?page={{ pagination_page + 1 }}{% if pagination_q %}&q={{ pagination_q | urlencode }}{% endif %}"
+            hx-target="{{ pagination_target }}" hx-swap="outerHTML">下一页</button>
+    {% else %}
+    <button type="button" class="quiet pagination-link" disabled>下一页</button>
+    {% endif %}
+
+    <form class="pagination-jump" hx-get="{{ pagination_endpoint }}" hx-target="{{ pagination_target }}" hx-swap="outerHTML" hx-trigger="submit">
+        {% if pagination_q %}<input type="hidden" name="q" value="{{ pagination_q }}">{% endif %}
+        <label>跳至 <input type="number" name="page" min="1" max="{{ pagination_total_pages }}" value="{{ pagination_page }}" required></label>
+        <button type="submit" class="quiet">跳转</button>
+    </form>
+</nav>

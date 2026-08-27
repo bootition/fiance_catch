@@ -7,4 +7,48 @@
 </datalist>
 {% include "_high_risk_section.html" %}
 {% include "_category_section.html" %}
+<script>
+(function () {
+    function syncBulkCategory(form) {
+        var typeSelect = form.querySelector('select[name="entry_type"]');
+        var catSelect = form.querySelector('select[name="category"]');
+        if (!typeSelect || !catSelect) return;
+
+        var entryType = typeSelect.value;
+        catSelect.querySelectorAll('optgroup[data-for-type]').forEach(function (group) {
+            group.disabled = group.dataset.forType !== entryType;
+        });
+
+        if (entryType === 'transfer') {
+            catSelect.value = '';
+            catSelect.required = false;
+        } else {
+            catSelect.required = true;
+            var allowed = Array.prototype.slice.call(
+                catSelect.querySelectorAll('optgroup[data-for-type="' + entryType + '"] option')
+            ).map(function (option) { return option.value; });
+            if (allowed.length && allowed.indexOf(catSelect.value) === -1) {
+                catSelect.value = allowed[0];
+            }
+        }
+    }
+
+    function initBulkCategories(root) {
+        (root || document).querySelectorAll('.bulk-confirm-form').forEach(function (form) {
+            syncBulkCategory(form);
+        });
+    }
+
+    document.addEventListener('DOMContentLoaded', function () { initBulkCategories(document); });
+    document.addEventListener('change', function (event) {
+        if (event.target && event.target.matches('.bulk-confirm-form select[name="entry_type"]')) {
+            syncBulkCategory(event.target.closest('form'));
+        }
+    });
+    document.body.addEventListener('htmx:afterSwap', function (event) {
+        var root = (event.detail && event.detail.elt) || document;
+        initBulkCategories(root);
+    });
+})();
+</script>
 {% endblock %}

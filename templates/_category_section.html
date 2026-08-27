@@ -5,12 +5,13 @@
     </div>
     <form class="search-form"
           hx-get="/inbox/category" hx-target="#category-table-area" hx-swap="outerHTML"
-          hx-trigger="input changed delay:300ms, search">
-        <input type="search" name="q" value="{{ cat_q }}" placeholder="搜索商户名，如 美团">
+          hx-trigger="input changed delay:300ms, search, submit">
+        <input type="search" name="q" value="{{ cat_q }}" placeholder="搜索商户名或商品说明，如 美团 / 闲鱼">
         {% if cat_q %}
         <button type="button" class="quiet"
                 hx-get="/inbox/category?page=1" hx-target="#category-table-area" hx-swap="outerHTML">清除</button>
         {% endif %}
+        <button type="submit" class="quiet">搜索</button>
     </form>
     {% include "_category_table.html" %}
 </section>

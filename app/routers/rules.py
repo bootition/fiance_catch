@@ -12,7 +12,7 @@ from ..ledger_repo import (
     update_rule_status,
 )
 from ..router_support.settings_access import current_settings
-from ..stats import list_categories_used
+from ..stats import list_category_options
 from ..templates_core import templates
 
 router = APIRouter(tags=["Rules"])
@@ -63,7 +63,7 @@ def rules_list(request: Request, rule_id: int | None = None):
         "status_labels": STATUS_LABELS,
         "type_labels": TYPE_LABELS,
         "field_labels": FIELD_LABELS,
-        "categories": list_categories_used(settings.db_path),
+        "categories": list_category_options(settings.db_path),
         "selected_rule_id": rule_id,
         "history": history,
         "flash": None,
@@ -141,7 +141,7 @@ def _render(settings, request, flash: str | None):
         "status_labels": STATUS_LABELS,
         "type_labels": TYPE_LABELS,
         "field_labels": FIELD_LABELS,
-        "categories": list_categories_used(settings.db_path),
+        "categories": list_category_options(settings.db_path),
         "selected_rule_id": None,
         "history": [],
         "flash": flash,

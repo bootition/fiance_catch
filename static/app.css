@@ -833,3 +833,106 @@ tbody tr:hover {
         gap: 8px;
     }
 }
+
+/* ── Inbox 分组明细与页码跳页（用户反馈 2026-08-27） ── */
+.desc-cell {
+    min-width: 190px;
+    max-width: 360px;
+}
+
+.desc-chip {
+    display: inline-block;
+    max-width: 190px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    vertical-align: bottom;
+}
+
+.desc-sep {
+    color: #9aa9bc;
+    margin: 0 3px;
+}
+
+.group-detail-row td {
+    padding-top: 0;
+    padding-bottom: 2px;
+    border-bottom: 1px solid #e1e7f1;
+}
+
+.group-detail summary {
+    display: inline-block;
+    cursor: pointer;
+    color: var(--primary);
+    font-size: 12px;
+    font-weight: 700;
+    padding: 4px 0;
+    user-select: none;
+}
+
+.table-inner {
+    margin: 6px 0 10px;
+    border: 1px solid #e2e9f3;
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.table-inner th,
+.table-inner td {
+    font-size: 12px;
+    padding: 6px 8px;
+}
+
+.pagination-full {
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.pagination-link,
+.pagination-current,
+.pagination-ellipsis {
+    min-width: 34px;
+    min-height: 32px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.pagination-current {
+    border: 1px solid var(--primary);
+    color: #ffffff;
+    background: var(--primary);
+}
+
+.pagination-ellipsis {
+    color: var(--ink-soft);
+}
+
+.pagination-jump {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+}
+
+.pagination-jump label {
+    flex-direction: row;
+    align-items: center;
+    text-transform: none;
+    letter-spacing: 0;
+    color: var(--ink-soft);
+}
+
+.pagination-jump input[type="number"] {
+    width: 70px;
+    min-height: 32px;
+    padding: 5px 7px;
+}
+
+.pagination-jump button {
+    min-height: 32px;
+    padding: 6px 10px;
+}

@@ -210,3 +210,110 @@ def test_inbox_category_pagination_and_search(client):
     assert result.text.count('<form method="post"') == 1
     assert "商户05" in result.text
     assert "商户06" not in result.text
+
+
+def test_inbox_search_enter_is_intercepted_and_searches_item_desc(client):
+    """搜索回车不再触发浏览器整页 GET：hx-trigger 显式包含 submit，且搜索范围包含商品说明。"""
+    c, settings = client
+    _upload(
+        c,
+        [
+            "2026-07-01 10:00:00,收入,x***1,/,闲鱼虚拟资料项目,收入,10.00,余额宝,交易成功,TXN-SEARCH-1,,",
+            "2026-07-02 10:00:00,收入,x***2,/,普通商品,收入,20.00,余额宝,交易成功,TXN-SEARCH-2,,",
+        ],
+    )
+    inbox = c.get("/inbox")
+    assert 'hx-trigger="input changed delay:300ms, search, submit"' in inbox.text
+    result = c.get("/inbox/category", params={"q": "闲鱼"})
+    assert result.status_code == 200
+    assert "<html" not in result.text  # 局部片段而非整页
+    assert "闲鱼虚拟资料项目" in result.text
+    assert "普通商品" not in result.text
+
+
+def test_inbox_category_rows_show_details_and_formal_category_options(client):
+    """分类区展示商品说明样本与交易时间，且消费/收入分类下拉内置 PRD 正式分类。"""
+    c, settings = client
+    _upload(
+        c,
+        [
+            "2026-07-05 18:24:30,收入,x***1,/,闲鱼虚拟资料项目A,收入,10.00,余额宝,交易成功,TXN-DETAIL-1,,",
+            "2026-07-06 18:25:30,收入,x***1,/,闲鱼虚拟资料项目B,收入,20.00,余额宝,交易成功,TXN-DETAIL-2,,",
+        ],
+    )
+    inbox = c.get("/inbox")
+    text = inbox.text
+    assert "商品 / 说明（样本）" in text
+    assert "最近交易时间" in text
+    assert "闲鱼虚拟资料项目A" in text
+    assert "闲鱼虚拟资料项目B" in text
+    assert "2026-07-06 18:25:30" in text
+    assert "查看 2 笔明细" in text
+    # PRD §2.2 正式分类必须内置于下拉，而不是只有“选择分类”
+    assert 'optgroup label="消费分类"' in text
+    assert 'optgroup label="收入分类"' in text
+    for category in ("日常三餐", "出行交通", "书籍学习", "日常娱乐", "旅游", "日常缴费", "副业成本", "副业收入", "其他收入"):
+        assert f'<option value="{category}"' in text
+
+
+def test_inbox_pagination_has_page_numbers_and_jump_controls(client):
+    """两个分页区都显示当前页附近的页码按钮，并提供页码输入跳转。"""
+    c, settings = client
+    risk_rows = [
+        f"2026-07-{day:02d} 10:00:00,账户存取,某银行,/,提现到银行卡,不计收支,500.00,账户余额,交易成功,TXN-PGNUM-R{day},,"
+        for day in range(1, 26)
+    ]
+    _upload(c, risk_rows)
+    inbox = c.get("/inbox")
+    assert "pagination-current" in inbox.text
+    assert "跳至" in inbox.text
+    assert 'name="page"' in inbox.text
+    assert "跳转" in inbox.text
+
+    risk_page2 = c.get("/inbox/high-risk", params={"page": 2})
+    assert risk_page2.status_code == 200
+    assert 'aria-current="page">2</span>' in risk_page2.text
+    assert "pagination-jump" in risk_page2.text
+
+    cat_rows = [
+        f"2026-07-01 10:{i % 60:02d}:00,日用百货,商户{i:02d},/,消费,支出,10.00,余额宝,交易成功,TXN-PGNUM-C{i},,"
+        for i in range(1, 41)
+    ]
+    _upload(c, cat_rows)
+    cat_page1 = c.get("/inbox/category", params={"page": 1})
+    assert 'aria-current="page">1</span>' in cat_page1.text
+    assert 'hx-get="/inbox/category?page=2"' in cat_page1.text
+    assert "pagination-jump" in cat_page1.text
+
+
+def test_inbox_transfer_confirm_does_not_require_category(client):
+    """调拨批量确认允许分类为空（PRD：调拨不计分类），服务端把分类清空。"""
+    from app.ledger_repo import create_classification_rule
+
+    c, settings = client
+    create_classification_rule(
+        settings.db_path,
+        match_field="counterparty",
+        match_pattern="转款商户",
+        target_type="transfer",
+        target_category="",
+    )
+    _upload(
+        c,
+        [
+            "2026-07-01 10:00:00,其他,转款商户,/,转款事项,支出,100.00,余额宝,交易成功,TXN-TRANSFER-1,,",
+            "2026-07-02 10:00:00,其他,转款商户,/,转款事项,支出,50.00,余额宝,交易成功,TXN-TRANSFER-2,,",
+        ],
+    )
+    response = c.post(
+        "/inbox/confirm",
+        data={
+            "counterparty": "转款商户",
+            "platform": "alipay",
+            "direction": "expense",
+            "entry_type": "transfer",
+            "category": "",
+        },
+    )
+    assert response.status_code == 200
+    assert "已确认 2 项" in response.text

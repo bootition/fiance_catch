@@ -17,6 +17,7 @@ from .decisions.constants import (
     CATEGORY_SIDE_INCOME,
     CATEGORY_TRANSPORT,
     CATEGORY_TRAVEL,
+    FORMAL_CATEGORIES,
     TYPE_CONSUMPTION,
     TYPE_INCOME,
 )
@@ -155,9 +156,10 @@ def list_entries_filtered(
     platform: str | None = None,
     batch_id: int | None = None,
     manual_only: bool = False,
+    source_status: str | None = None,
     limit: int = 500,
 ) -> list[dict]:
-    """流水筛选（规格 §3.4）：日期、类型、分类、平台、批次、人工改动。"""
+    """流水筛选（规格 §3.4）：日期、类型、分类、平台、批次、来源状态、人工改动。"""
     clauses = ["le.txn_date >= ?", "le.txn_date < ?"]
     params: list = [start, end]
     if entry_type:
@@ -174,6 +176,9 @@ def list_entries_filtered(
         params.append(batch_id)
     if manual_only:
         clauses.append("le.manual_edited = 1")
+    if source_status:
+        clauses.append("st.status_text = ?")
+        params.append(source_status)
 
     safe_limit = max(1, min(int(limit), 2000))
     with connect(db_path) as conn:
@@ -209,6 +214,35 @@ def list_categories_used(db_path) -> list[str]:
             """
         ).fetchall()
         return [row["category"] for row in rows]
+
+
+def list_category_options(db_path) -> list[str]:
+    """分类候选：正式 9 分类在前，历史已用自定义分类兜底在后。
+
+    PRD §2.2 只认 9 个正式分类；首次使用账本无任何分类时，
+    下拉框仍应展示正式分类，而不是只剩“选择分类”占位符。
+    """
+    seen: dict[str, None] = {}
+    ordered: list[str] = []
+    for category in (*FORMAL_CATEGORIES, *list_categories_used(db_path)):
+        if not category or category in seen:
+            continue
+        seen[category] = None
+        ordered.append(category)
+    return ordered
+
+
+def list_source_statuses(db_path) -> list[str]:
+    """流水筛选候选：来源流水已出现的平台状态。"""
+    with connect(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT DISTINCT status_text FROM source_transactions
+            WHERE TRIM(status_text) <> ''
+            ORDER BY status_text ASC
+            """
+        ).fetchall()
+        return [row["status_text"] for row in rows]
 
 
 def list_batches(db_path) -> list[dict]:

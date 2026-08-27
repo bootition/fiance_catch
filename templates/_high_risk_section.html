@@ -9,19 +9,9 @@
             {% include "_risk_card.html" %}
         {% endfor %}
         {% if risk_total_pages > 1 %}
-        <nav class="pagination" aria-label="高风险区分页">
-            {% if risk_page > 1 %}
-            <button class="quiet" hx-get="/inbox/high-risk?page={{ risk_page - 1 }}" hx-target="#high-risk-section" hx-swap="outerHTML">上一页</button>
-            {% else %}
-            <button class="quiet" disabled>上一页</button>
-            {% endif %}
-            <span class="pagination-info">第 {{ risk_page }} / {{ risk_total_pages }} 页 · 共 {{ risk_total }} 条</span>
-            {% if risk_page < risk_total_pages %}
-            <button class="quiet" hx-get="/inbox/high-risk?page={{ risk_page + 1 }}" hx-target="#high-risk-section" hx-swap="outerHTML">下一页</button>
-            {% else %}
-            <button class="quiet" disabled>下一页</button>
-            {% endif %}
-        </nav>
+            {% with pagination_page=risk_page, pagination_total_pages=risk_total_pages, pagination_endpoint="/inbox/high-risk", pagination_target="#high-risk-section", pagination_q="", pagination_info="第 " ~ risk_page ~ " / " ~ risk_total_pages ~ " 页 · 共 " ~ risk_total ~ " 条", pagination_aria_label="高风险区分页" %}
+                {% include "_pagination.html" %}
+            {% endwith %}
         {% endif %}
         <p class="note-text">提现须逐笔选用途、退款须关联原消费、人际转账须人工定性——这些记录不参与批量确认。</p>
     {% else %}

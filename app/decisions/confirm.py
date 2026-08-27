@@ -16,9 +16,11 @@ from ..ledger_repo import (
     _create_ledger_entry,
 )
 from .constants import (
+    BULK_TYPES,
     CATEGORY_TRAVEL,
     REASON_OBSERVING_RULE,
     REASON_UNMATCHED,
+    TYPE_TRANSFER,
 )
 
 REVIEW_PENDING = "pending"
@@ -45,6 +47,7 @@ class GroupItem:
     amount_cents: int
     occurred_at: str
     item_desc: str
+    raw_type: str
     reason: str
     suggested_category: str
     suggested_type: str
@@ -64,6 +67,26 @@ class Group:
     @property
     def total_cents(self) -> int:
         return sum(item.amount_cents for item in self.items)
+
+    @property
+    def item_desc_samples(self) -> list[str]:
+        """本组商品/说明的去重样本（最多 3 个），用于表格快速辨认。"""
+        samples: list[str] = []
+        for item in self.items:
+            text = (item.item_desc or "").strip()
+            if text and text not in ("/", "-") and text not in samples:
+                samples.append(text)
+            if len(samples) >= 3:
+                break
+        return samples
+
+    @property
+    def first_occurred_at(self) -> str:
+        return self.items[0].occurred_at
+
+    @property
+    def last_occurred_at(self) -> str:
+        return self.items[-1].occurred_at
 
 
 def group_review_items(db_path) -> list[Group]:
@@ -90,6 +113,7 @@ def group_review_items(db_path) -> list[Group]:
               st.occurred_at,
               st.amount_cents,
               st.item_desc,
+              st.raw_type,
               st.batch_id
             FROM review_queue AS rq
             JOIN source_transactions AS st ON st.id = rq.source_transaction_id
@@ -109,6 +133,7 @@ def group_review_items(db_path) -> list[Group]:
                 amount_cents=int(row["amount_cents"]),
                 occurred_at=row["occurred_at"],
                 item_desc=row["item_desc"],
+                raw_type=row["raw_type"] or "",
                 reason=row["reason"],
                 suggested_category=row["suggested_category"] or "",
                 suggested_type=row["suggested_type"] or "",
@@ -132,7 +157,17 @@ def group_review_items_paged(
     groups = group_review_items(db_path)
     query = (q or "").strip()
     if query:
-        groups = [g for g in groups if query.lower() in (g.counterparty or "").lower()]
+        needle = query.lower()
+        groups = [
+            g
+            for g in groups
+            if needle in (g.counterparty or "").lower()
+            or any(
+                needle in (item.item_desc or "").lower()
+                or needle in (item.raw_type or "").lower()
+                for item in g.items
+            )
+        ]
     total_groups = len(groups)
     total_items = sum(g.count for g in groups)
     total_pages = max(1, (total_groups + per_page - 1) // per_page)
@@ -186,6 +221,15 @@ def confirm_group(
             raise ValueError(
                 f"high-risk reasons cannot be bulk confirmed: {sorted(high_risk)}"
             )
+
+        entry_type = (entry_type or "").strip()
+        category = (category or "").strip()
+        if entry_type not in BULK_TYPES:
+            raise ValueError(f"invalid entry_type for bulk confirm: {entry_type!r}")
+        if entry_type == TYPE_TRANSFER:
+            category = ""
+        elif not category:
+            raise ValueError("消费/收入必须选择分类")
 
         rule_id = None
         if len(group.items) >= 2:
