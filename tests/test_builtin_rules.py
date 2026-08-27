@@ -56,10 +56,10 @@ def test_builtin_transport_rules_auto_post_new_import(client):
         ],
     )
     entries = list_ledger_entries(settings.db_path)
-    assert len(entries) == 6
-    assert all(e["category"] == "出行交通" for e in entries)
-    pending = list_review_queue(settings.db_path)
-    assert len(pending) == 1  # 蜜雪冰城仍待确认
+    assert len(entries) == 7
+    assert [e["category"] for e in entries].count("出行交通") == 6
+    assert [e["category"] for e in entries].count("日常三餐") == 1  # 美团有商品名 → 三餐
+    assert list_review_queue(settings.db_path) == []
 
 
 def _enqueue_unmatched_source(settings, txn_id, direction, item_desc):

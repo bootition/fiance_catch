@@ -20,8 +20,9 @@
                         <label class="radio-row">
                             <input type="radio" name="original_ledger_id" value="{{ cand.ledger_id }}" required>
                             <span>
-                                {{ cand.txn_date }} · {{ cand.counterparty or "（无对方）" }} ·
+                                <strong>账本 #{{ cand.ledger_id }}</strong> · {{ cand.txn_date }} · {{ cand.counterparty or "（无对方）" }} ·
                                 {{ "%.2f"|format(cand.amount_cents / 100) }} 元
+                                {% if cand.source_txn_id %}<small> · 单号 {{ cand.source_txn_id }}</small>{% endif %}
                                 {% if cand.already_refunded_cents %}
                                     （已退 {{ "%.2f"|format(cand.already_refunded_cents / 100) }}，可退 {{ "%.2f"|format((cand.amount_cents - cand.already_refunded_cents) / 100) }}）
                                 {% endif %}

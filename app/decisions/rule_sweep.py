@@ -10,6 +10,7 @@ from dataclasses import dataclass
 
 from ..db import connect
 from ..ledger_repo import _add_audit_event, _bump_rule_stats, _create_ledger_entry
+from .constants import REASON_OTHER_NEUTRAL, TYPE_TRANSFER
 from .builtin_rules import (
     _sync_batch_pending,
     apply_builtin_rules_to_pending,
@@ -173,8 +174,89 @@ def apply_active_rules_to_pending(db_path) -> int:
         return posted
 
 
+def apply_transfer_rules_to_neutral_pending(db_path) -> int:
+    """把 active 调拨规则应用到高风险区 other_neutral 待确认（如基金买入）。"""
+    with connect(db_path) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        rules = conn.execute(
+            """
+            SELECT * FROM classification_rules
+            WHERE status = 'active' AND target_type = 'transfer'
+            ORDER BY id ASC
+            """
+        ).fetchall()
+        rows = conn.execute(
+            """
+            SELECT
+              rq.id AS review_id,
+              rq.source_transaction_id,
+              st.*
+            FROM review_queue AS rq
+            JOIN source_transactions AS st ON st.id = rq.source_transaction_id
+            WHERE rq.status = 'pending'
+              AND rq.reason = ?
+            ORDER BY st.occurred_at ASC, st.id ASC
+            """,
+            (REASON_OTHER_NEUTRAL,),
+        ).fetchall()
+        posted = 0
+        for row in rows:
+            source = dict(row)
+            matched = None
+            for rule in rules:
+                if str(rule["platform"] or "") not in ("", source["platform"]):
+                    continue
+                if str(rule["direction"] or "") not in ("", source["direction"]):
+                    continue
+                if not _rule_matches(
+                    rule,
+                    source["counterparty"],
+                    source["item_desc"],
+                    source["raw_type"],
+                ):
+                    continue
+                matched = rule
+                break
+            if matched is None:
+                continue
+            entry_id = _create_ledger_entry(
+                conn,
+                entry_type=TYPE_TRANSFER,
+                amount_cents=source["amount_cents"],
+                category=matched["target_category"],
+                txn_date=source["occurred_at"][:10],
+                source_transaction_id=source["id"],
+                batch_id=source["batch_id"],
+                note="",
+            )
+            conn.execute(
+                """
+                UPDATE review_queue
+                SET status = 'resolved',
+                    resolved_ledger_id = ?,
+                    resolved_at = datetime('now')
+                WHERE id = ? AND status = 'pending'
+                """,
+                (entry_id, source["review_id"]),
+            )
+            _bump_rule_stats(conn, matched["id"], confirmed=False)
+            _add_audit_event(
+                conn,
+                event_type="rule_applied",
+                ref_ledger_id=entry_id,
+                ref_rule_id=matched["id"],
+                ref_batch_id=source["batch_id"],
+                detail=f"field:{matched['match_field']};pattern:{matched['match_pattern']}",
+            )
+            _sync_batch_pending(conn, source["batch_id"])
+            posted += 1
+        conn.commit()
+        return posted
+
+
 def apply_all_rules_to_pending(db_path) -> int:
     """内置规则 + active 用户规则，全部应用到 unmatched 待确认。"""
     total = apply_builtin_rules_to_pending(db_path).posted
     total += apply_active_rules_to_pending(db_path)
+    total += apply_transfer_rules_to_neutral_pending(db_path)
     return total

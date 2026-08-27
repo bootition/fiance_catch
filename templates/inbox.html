@@ -16,7 +16,9 @@
 
         var entryType = typeControl.value;
         catSelect.querySelectorAll('optgroup[data-for-type]').forEach(function (group) {
-            group.disabled = group.dataset.forType !== entryType;
+            var visible = group.dataset.forType === entryType;
+            group.disabled = !visible;
+            group.hidden = !visible;
         });
 
         catSelect.required = true;

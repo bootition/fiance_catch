@@ -25,6 +25,7 @@ class RefundCandidate:
     txn_date: str
     counterparty: str
     item_desc: str
+    source_txn_id: str
     already_refunded_cents: int
     score: int
     match_reason: str
@@ -116,6 +117,7 @@ def find_refund_candidates(db_path, refund_source_id: int) -> list[RefundCandida
                     txn_date=row["txn_date"],
                     counterparty=counterparty,
                     item_desc=item_desc,
+                    source_txn_id=source_txn,
                     already_refunded_cents=already,
                     score=score,
                     match_reason=reason,

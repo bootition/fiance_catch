@@ -6,6 +6,7 @@
 """
 
 from dataclasses import dataclass
+import re
 
 from ..db import connect
 from ..ledger_repo import (
@@ -70,6 +71,34 @@ def matches_builtin_side_income(source) -> str | None:
         return "masked_counterparty"
     if counterparty in ("网易BUFF卖家",):
         return "known_counterparty"
+    return None
+
+
+def matches_builtin_meituan(source):
+    """美团消费形态识别（用户指引 2026-08-27）。
+
+    - 只有一串编号：`美团订单-数字...` → 出行交通
+    - 有商品名称（含中文）→ 日常三餐
+    返回 (category, pattern)；不适用返回 None。
+    """
+    if source["direction"] != "expense":
+        return None
+    counterparty = str(source["counterparty"] or "")
+    item_desc = str(source["item_desc"] or "").strip()
+    is_meituan = (
+        counterparty in ("美团", "美团平台商户")
+        or "美团App" in item_desc
+        or "美团微信小程序" in item_desc
+        or "拼好饭微信小程序" in item_desc
+    )
+    if not is_meituan:
+        return None
+    if re.fullmatch(r"美团订单-\d+", item_desc):
+        return ("出行交通", "meituan_serial")
+    if "合并支付购买" in item_desc or not item_desc:
+        return None
+    if re.search(r"[一-鿿]", item_desc):
+        return ("日常三餐", "meituan_named")
     return None
 
 
@@ -171,6 +200,21 @@ def apply_builtin_rules_to_pending(db_path) -> BuiltinApplyResult:
                     entry_type=TYPE_INCOME,
                     category=CATEGORY_SIDE_INCOME,
                     match_field="side_income",
+                )
+                _sync_batch_pending(conn, source["batch_id"])
+                posted += 1
+                continue
+            meituan_match = matches_builtin_meituan(source)
+            if meituan_match is not None:
+                category, pattern = meituan_match
+                _post_builtin(
+                    conn,
+                    source,
+                    source["review_id"],
+                    pattern,
+                    entry_type=TYPE_CONSUMPTION,
+                    category=category,
+                    match_field="meituan",
                 )
                 _sync_batch_pending(conn, source["batch_id"])
                 posted += 1

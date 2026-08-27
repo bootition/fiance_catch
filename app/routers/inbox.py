@@ -157,6 +157,7 @@ def _refund_candidates(db_path, source_id: int) -> list[dict]:
                 "txn_date": c.txn_date,
                 "counterparty": c.counterparty,
                 "item_desc": c.item_desc,
+                "source_txn_id": c.source_txn_id,
                 "already_refunded_cents": c.already_refunded_cents,
                 "match_reason": c.match_reason,
             }
