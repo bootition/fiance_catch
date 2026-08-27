@@ -169,6 +169,6 @@ def apply_active_rules_to_pending(db_path) -> int:
 
 def apply_all_rules_to_pending(db_path) -> int:
     """内置规则 + active 用户规则，全部应用到 unmatched 待确认。"""
-    total = apply_builtin_rules_to_pending(db_path)
+    total = apply_builtin_rules_to_pending(db_path).posted
     total += apply_active_rules_to_pending(db_path)
     return total
