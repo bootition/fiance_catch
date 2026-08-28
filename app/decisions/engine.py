@@ -20,7 +20,7 @@ from ..ledger_repo import (
     _enqueue_review,
     _update_batch_counts,
 )
-from .builtin_rules import matches_builtin_huabei_discard, matches_builtin_interest_income, matches_builtin_jd, matches_builtin_meituan, matches_builtin_side_income, matches_builtin_transport
+from .builtin_rules import matches_builtin_huabei_discard, matches_builtin_interest_income, matches_builtin_internal_transfer, matches_builtin_jd, matches_builtin_meituan, matches_builtin_side_income, matches_builtin_transport
 from .constants import (
     CATEGORY_SIDE_INCOME,
     CATEGORY_TRAVEL,
@@ -186,7 +186,7 @@ def process_source(conn, source) -> str:
                 detail="builtin:1;field:interest;pattern:interest",
             )
             return ACTION_POSTED
-        if matches_builtin_huabei_discard(source):
+        if matches_builtin_internal_transfer(source) or matches_builtin_huabei_discard(source):
             _create_ledger_entry(
                 conn,
                 entry_type=TYPE_TRANSFER,

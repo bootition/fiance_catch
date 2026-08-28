@@ -16,6 +16,7 @@ from .builtin_rules import (
     apply_builtin_rules_to_pending,
     matches_builtin_huabei_discard,
     matches_builtin_interest_income,
+    matches_builtin_internal_transfer,
     matches_builtin_transport,
 )
 from ..refunds.linking import link_refund_to_ledger
@@ -400,8 +401,8 @@ def apply_builtin_neutral_pending(db_path) -> int:
             source = dict(row)
             if matches_builtin_interest_income(source):
                 entry_type, category, pattern = TYPE_INCOME, CATEGORY_OTHER_INCOME, "interest"
-            elif matches_builtin_huabei_discard(source):
-                entry_type, category, pattern = TYPE_TRANSFER, "", "huabei_repay"
+            elif matches_builtin_huabei_discard(source) or matches_builtin_internal_transfer(source):
+                entry_type, category, pattern = TYPE_TRANSFER, "", "internal_transfer"
             else:
                 continue
             entry_id = _create_ledger_entry(

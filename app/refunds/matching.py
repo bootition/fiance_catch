@@ -173,16 +173,5 @@ def _score(
             return 85, "同平台同商户金额匹配"
         return 80, "同平台金额匹配"
 
-    # 退款金额大于原消费：金额不同，直接排除（用户指引 2026-08-28）
-    if entry_amount < refund_amount:
-        return 0, ""
-
-    # 部分退款：退款金额小于原消费，允许同商户/时间相近的候选
-    same_counterparty = counterparty and counterparty == refund_counterparty
-    if same_counterparty and day_diff == 0:
-        return 78, "同平台同商户同日部分退款匹配"
-    if same_counterparty and day_diff <= 3:
-        return 76, "同平台同商户时间相近部分退款匹配"
-    if same_counterparty:
-        return 72, "同平台同商户部分退款匹配"
+    # 用户指引 2026-08-28：退款金额必须严格等于原消费金额，其他金额差异一律排除
     return 0, ""

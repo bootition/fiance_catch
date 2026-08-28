@@ -126,6 +126,16 @@ def matches_builtin_interest_income(source):
     return None
 
 
+def matches_builtin_internal_transfer(source):
+    """余利宝/网商银行账户内调转：丢弃为调拨，不影响收支。"""
+    if source["direction"] != "neutral":
+        return None
+    text = f"{source['counterparty']} {source['item_desc']}"
+    if "余利宝" in text or "网商银行" in text:
+        return "internal_transfer"
+    return None
+
+
 def matches_builtin_huabei_discard(source):
     """花呗还款：消费已记账，还款本身丢弃为调拨（不计收支）。"""
     if source["direction"] != "neutral":
