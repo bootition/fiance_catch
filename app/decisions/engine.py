@@ -23,6 +23,7 @@ from ..ledger_repo import (
 from .builtin_rules import matches_builtin_huabei_discard, matches_builtin_interest_income, matches_builtin_internal_transfer, matches_builtin_jd, matches_builtin_meituan, matches_builtin_side_income, matches_builtin_transport
 from .constants import (
     CATEGORY_SIDE_INCOME,
+    DIRECTION_ALLOWED_BULK_TYPES,
     CATEGORY_TRAVEL,
     REASON_OBSERVING_RULE,
     REASON_OTHER_NEUTRAL,
@@ -137,7 +138,7 @@ def process_source(conn, source) -> str:
         if (
             rule is not None
             and rule["status"] == RULE_STATUS_ACTIVE
-            and rule["target_type"] in (TYPE_CONSUMPTION, TYPE_INCOME)
+            and rule["target_type"] in DIRECTION_ALLOWED_BULK_TYPES.get(source["direction"], frozenset())
         ):
             entry_id = _create_ledger_entry(
                 conn,

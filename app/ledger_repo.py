@@ -4,6 +4,7 @@ from datetime import date as dt_date
 from datetime import datetime as dt_datetime
 
 from .db import connect
+from .decisions.constants import DIRECTION_ALLOWED_BULK_TYPES
 
 _ISO_DATETIME_RE = re.compile(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$")
 _ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -689,6 +690,12 @@ def _create_classification_rule(
         raise ValueError("invalid rule direction")
     if match_field == "counterparty" and "*" in pattern:
         raise ValueError("商户名已脱敏，不能作为规则条件；请改用商品/商品说明")
+    if direction:
+        allowed_types = DIRECTION_ALLOWED_BULK_TYPES.get(direction, frozenset())
+        if target_type not in allowed_types:
+            raise ValueError(
+                f"规则方向与目标类型不一致：{direction} 不能写入 {target_type}"
+            )
     cur = conn.execute(
         """
         INSERT INTO classification_rules(

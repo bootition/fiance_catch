@@ -10,7 +10,7 @@ from dataclasses import dataclass
 
 from ..db import connect
 from ..ledger_repo import _add_audit_event, _bump_rule_stats, _create_ledger_entry
-from .constants import CATEGORY_OTHER_INCOME, REASON_OTHER_NEUTRAL, TYPE_INCOME, TYPE_TRANSFER
+from .constants import CATEGORY_OTHER_INCOME, DIRECTION_ALLOWED_BULK_TYPES, REASON_OTHER_NEUTRAL, TYPE_INCOME, TYPE_TRANSFER
 from .builtin_rules import (
     _sync_batch_pending,
     apply_builtin_rules_to_pending,
@@ -132,6 +132,8 @@ def apply_active_rules_to_pending(db_path) -> int:
                 if str(rule["platform"] or "") not in ("", source["platform"]):
                     continue
                 if str(rule["direction"] or "") not in ("", source["direction"]):
+                    continue
+                if rule["target_type"] not in DIRECTION_ALLOWED_BULK_TYPES.get(source["direction"], frozenset()):
                     continue
                 if not _rule_matches(
                     rule,
@@ -291,6 +293,8 @@ def apply_person_transfer_rules(db_path) -> int:
                 if str(rule["platform"] or "") not in ("", source["platform"]):
                     continue
                 if str(rule["direction"] or "") not in ("", source["direction"]):
+                    continue
+                if rule["target_type"] not in DIRECTION_ALLOWED_BULK_TYPES.get(source["direction"], frozenset()):
                     continue
                 if not _rule_matches(
                     rule,

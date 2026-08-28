@@ -53,11 +53,18 @@ DIRECTION_LABELS = {
 }
 
 WITHDRAWAL_PURPOSE_LABELS = {
-    WITHDRAWAL_PURPOSE_TRANSFER: "未追踪账户调拨",
-    WITHDRAWAL_PURPOSE_INVESTMENT: "投资",
+    WITHDRAWAL_PURPOSE_TRANSFER: "调拨/投资",
+    WITHDRAWAL_PURPOSE_INVESTMENT: "投资/调拨",
     WITHDRAWAL_PURPOSE_CASH_EXPENSE: "现金消费",
     WITHDRAWAL_PURPOSE_OTHER: "其他",
 }
+
+# 页面不再单独显示“未追踪账户调拨”；投资/其他用途直接选择调拨专用分类
+WITHDRAWAL_PURPOSES_UI = (
+    WITHDRAWAL_PURPOSE_INVESTMENT,
+    WITHDRAWAL_PURPOSE_CASH_EXPENSE,
+    WITHDRAWAL_PURPOSE_OTHER,
+)
 
 
 RISK_PER_PAGE = 20
@@ -219,7 +226,7 @@ def _inbox_context(
         "categories": category_options,
         "category_options_by_type": CATEGORY_OPTIONS_BY_TYPE,
         "custom_category_options": [c for c in category_options if c not in FORMAL_CATEGORIES],
-        "withdrawal_purposes": WITHDRAWAL_PURPOSES,
+        "withdrawal_purposes": WITHDRAWAL_PURPOSES_UI,
         "withdrawal_purpose_labels": WITHDRAWAL_PURPOSE_LABELS,
         "flash": flash,
     }

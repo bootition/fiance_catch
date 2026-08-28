@@ -647,3 +647,17 @@ def test_raw_type_rule_auto_posts_alipay_income(db, tmp_path):
     entry = list_ledger_entries(db)[0]
     assert entry["entry_type"] == TYPE_INCOME
     assert entry["category"] == CATEGORY_SIDE_INCOME
+
+
+def test_rule_direction_target_type_validation(db):
+    """数据库/服务层禁止支出方向写入收入规则（亲情卡误写防护）。"""
+    with pytest.raises(ValueError):
+        create_classification_rule(
+            db,
+            match_field="item_desc",
+            match_pattern="亲情卡",
+            platform="",
+            direction="expense",
+            target_type=TYPE_INCOME,
+            target_category=CATEGORY_SIDE_INCOME,
+        )
