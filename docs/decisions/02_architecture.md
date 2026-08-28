@@ -2,7 +2,7 @@
 title: 账单驱动个人财务系统架构说明（v2 当前产品面）
 status: approved
 category: decisions
-last-reviewed: 2026-08-27
+last-reviewed: 2026-08-29
 ---
 
 # 账单驱动个人财务系统架构说明
@@ -20,13 +20,14 @@ last-reviewed: 2026-08-27
 | 流水 | `/transactions` | 日期/类型/分类/平台/批次/来源状态/关键词筛选、简易补账、退回待确认；详情 `/transactions/{id}` |
 | 规则 | `/rules` | 匹配字段 + 平台 + 方向条件，观察/自动/停用规则、命中历史、批量退回确认流水 |
 | 批次 | `/imports` | 导入历史、撤销与阻塞项展示 |
+| 拼多多订单同步 | `/pdd` | 订单快照导入、支出富化匹配、退款订单链接与状态 |
 
 ## Runtime Model
 
 - Backend: FastAPI
 - Templates: Jinja2（`app/templates_core.py` 注册模板环境与分页窗口 helper）
 - Partial interactivity: HTMX 1.9.12（CDN，本地化是后续优化项）
-- Storage: SQLite at project-root `.data/ledger.sqlite`（schema v6）
+- Storage: SQLite at project-root `.data/ledger.sqlite`（schema v8）
 
 ## Domain Shape
 
@@ -61,16 +62,18 @@ last-reviewed: 2026-08-27
 
 - `app/main.py`: app assembly and router mounting
 - `app/db.py`: legacy schema repair entry（仅当未初始化 v2 时）
-- `app/migration_v2.py`: v2 schema、备份/重置迁移（schema v5）
+- `app/migration_v2.py`: v2 schema、备份/重置迁移（schema v8）
 - `app/decisions/`: 入账决策、分组确认、高风险处理、规则匹配
 - `app/importing/`: 支付宝/微信解析与导入服务
 - `app/refunds/`: 退款状态、候选匹配、人工关联
+- `app/pdd/`: 拼多多订单导入、标准化（含 goods_id/sku_id）、支出/退款匹配、富化仓储
 - `app/router_support/`: settings 访问、请求解析、分页窗口 helper
-- `app/routers/`: 产品面路由（overview/imports/inbox/transactions/rules）
+- `app/routers/`: 产品面路由（overview/imports/inbox/transactions/rules/pdd）
 
 ## Persistence And Compatibility
 
 - 新模型表：`import_batches`、`source_transactions`、`ledger_entries`、`review_queue`、`refund_links`、`classification_rules`、`entry_audit_events`、`schema_meta`。
+- PDD v8 表：`pdd_sync_runs`、`pdd_orders`、`pdd_order_enrichments`、`pdd_order_enrichment_items`、`pdd_refund_order_links`。
 - 旧 `transactions` / `import_sessions` / `import_rows` / `category_rules` 表与旧路由不参与当前产品面。
 - `pytest` 直接运行；生产入口在应用 lifespan 调用 `init_db()` 建库/升级。
 

@@ -102,7 +102,9 @@ def _high_risk_items(db_path, *, page: int = 1, per_page: int = RISK_PER_PAGE) -
               st.occurred_at,
               st.amount_cents,
               st.counterparty,
-              st.item_desc,
+              COALESCE((SELECT en.product_desc FROM pdd_order_enrichments AS en
+                        WHERE en.source_transaction_id = st.id AND en.status = 'active'),
+                       st.item_desc) AS item_desc,
               st.direction
             FROM review_queue AS rq
             JOIN source_transactions AS st ON st.id = rq.source_transaction_id
@@ -137,7 +139,9 @@ def _risk_item(db_path, review_id: int) -> dict | None:
               st.occurred_at,
               st.amount_cents,
               st.counterparty,
-              st.item_desc,
+              COALESCE((SELECT en.product_desc FROM pdd_order_enrichments AS en
+                        WHERE en.source_transaction_id = st.id AND en.status = 'active'),
+                       st.item_desc) AS item_desc,
               st.direction
             FROM review_queue AS rq
             JOIN source_transactions AS st ON st.id = rq.source_transaction_id
@@ -261,7 +265,9 @@ def inbox_item_form(request: Request, review_id: int, cat_page: int = 1, cat_q: 
               st.direction,
               st.occurred_at,
               st.amount_cents,
-              st.item_desc
+              COALESCE((SELECT en.product_desc FROM pdd_order_enrichments AS en
+                        WHERE en.source_transaction_id = st.id AND en.status = 'active'),
+                       st.item_desc) AS item_desc
             FROM review_queue AS rq
             JOIN source_transactions AS st ON st.id = rq.source_transaction_id
             WHERE rq.id = ?

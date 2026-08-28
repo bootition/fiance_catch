@@ -20,6 +20,7 @@
             <a class="button-link {% if active_page == 'inbox' %}is-active{% endif %}" href="/inbox">待确认<span id="nav-pending-count">{% if pending_count is not none and pending_count > 0 %}（{{ pending_count }}）{% endif %}</span></a>
             <a class="button-link {% if active_page == 'transactions' %}is-active{% endif %}" href="/transactions">流水</a>
             <a class="button-link {% if active_page == 'rules' %}is-active{% endif %}" href="/rules">规则</a>
+            <a class="button-link {% if active_page == 'pdd' %}is-active{% endif %}" href="/pdd">拼多多</a>
             <a class="button-link {% if active_page == 'imports' %}is-active{% endif %}" href="/imports">批次</a>
         </nav>
     </header>

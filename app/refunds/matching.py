@@ -88,11 +88,34 @@ def find_refund_candidates(db_path, refund_source_id: int) -> list[RefundCandida
                 ).fetchone()
             counterparty = source["counterparty"] if source is not None else ""
             item_desc = source["item_desc"] if source is not None else ""
+            if source is not None:
+                enriched = conn.execute(
+                    """SELECT product_desc FROM pdd_order_enrichments
+                       WHERE source_transaction_id = ? AND status = 'active'""",
+                    (source["id"],),
+                ).fetchone()
+                if enriched is not None:
+                    item_desc = enriched["product_desc"]
             source_txn = source["source_txn_id"] if source is not None else ""
+            entry_order_sns = []
+            if source is not None:
+                entry_order_sns = [
+                    str(r["order_sn"])
+                    for r in conn.execute(
+                        """SELECT order_sn FROM pdd_order_enrichment_items
+                           WHERE enrichment_id = ?""",
+                        (source["id"],),
+                    ).fetchall()
+                ]
 
             already = _refunded_cents_by_ledger(conn, row["id"])
             if already >= int(row["amount_cents"]):
                 continue  # 已全额退款，无可退余额，不再列为候选
+            refund_order = conn.execute(
+                """SELECT order_sn FROM pdd_refund_order_links
+                   WHERE refund_source_transaction_id = ?""",
+                (refund_source_id,),
+            ).fetchone()
             score, reason = _score(
                 refund_amount=refund_amount,
                 entry_amount=int(row["amount_cents"]),
@@ -106,6 +129,8 @@ def find_refund_candidates(db_path, refund_source_id: int) -> list[RefundCandida
                 entry_platform=source["platform"] if source is not None else "",
                 refund_date=refund_date,
                 entry_date=row["txn_date"],
+                refund_order_sn=str(refund_order["order_sn"]) if refund_order is not None else "",
+                entry_order_sns=entry_order_sns,
             )
             if score <= 0:
                 continue
@@ -140,12 +165,17 @@ def _score(
     entry_platform: str,
     refund_date: str,
     entry_date: str,
+    refund_order_sn: str = "",
+    entry_order_sns: list[str] | None = None,
 ) -> tuple[int, str]:
     """匹配打分：订单引用 > 同平台同日同金额 > 商户单号 > 时间相近 > 同商户 > 同平台 > 仅同金额。
 
     用户指引 2026-08-28：退款可跨长时间匹配，优先当天/时间相近、
     相同平台、金额相同。
     """
+    entry_order_sns = entry_order_sns or []
+    if refund_order_sn and refund_order_sn in entry_order_sns:
+        return 100, "拼多多订单号匹配"
     if original_txn and source_txn == original_txn:
         return 100, "原交易订单号匹配"
     if merchant_id and merchant_id in item_desc:

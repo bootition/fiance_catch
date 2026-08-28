@@ -1,15 +1,14 @@
 ---
 title: 拼多多订单同步与回填规格（长期功能草案）
-status: draft
+status: approved
 category: decisions
 created: 2026-08-28
-last-reviewed: 2026-08-28
+last-reviewed: 2026-08-29
 ---
 
 # 拼多多订单同步与回填规格（长期功能草案）
 
-> 本草案由 2026-08-28 一次性抓取/回填实践提炼，供用户确认后转为 `approved` 并实施。
-> 未获用户确认前，本文件不构成当前结论；当前结论仍以 `docs/STATUS.md` 与 `docs/decisions/01_refactor_spec.md` 为准。
+> 用户已于 2026-08-29 批准 D1-D5；MVP 已实施并验收（见 `docs/reports/48_pdd_sync_v8_2026-08-29.md`）。
 
 ## 1. 背景与目标
 

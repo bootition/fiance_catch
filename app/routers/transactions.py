@@ -214,6 +214,14 @@ def transactions_detail(request: Request, entry_id: int):
                 (entry["source_transaction_id"],),
             ).fetchone()
             source = dict(source) if source is not None else None
+            if source is not None:
+                enriched = conn.execute(
+                    """SELECT product_desc FROM pdd_order_enrichments
+                       WHERE source_transaction_id = ? AND status = 'active'""",
+                    (entry["source_transaction_id"],),
+                ).fetchone()
+                if enriched is not None:
+                    source["item_desc"] = enriched["product_desc"]
         batch = None
         if entry["batch_id"] is not None:
             batch = conn.execute(
@@ -274,6 +282,9 @@ def transactions_detail(request: Request, entry_id: int):
             "batch_revoked": "批次撤销",
             "high_risk_resolved": "高风险定性",
             "bulk_reopen": "退回待确认",
+            "refund_unlinked": "退款取消关联",
+            "pdd_enrich_applied": "PDD商品回填",
+            "pdd_enrich_revoked": "PDD商品回填撤销",
         },
         "source": source,
         "batch": batch,

@@ -1,9 +1,10 @@
 ---
 title: 用户反馈第二十轮修复（亲情卡方向纠正与规则校验、提现分类显示）
-status: approved
+status: superseded
 category: reports
 created: 2026-08-28
-last-reviewed: 2026-08-28
+last-reviewed: 2026-08-29
+superseded-by: docs/reports/48_pdd_sync_v8_2026-08-29.md
 ---
 
 # 47 用户反馈第二十轮修复

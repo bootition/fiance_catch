@@ -48,6 +48,7 @@ superseded-by: ...        # 可选：被谁取代（相对 docs/ 的路径）
 - `decisions/01_refactor_spec.md` — 账单驱动重构规格（验收合同，活文档；等待用户确认后实施）
 - `decisions/02_architecture.md` — 当前架构说明
 - `decisions/03_engineering_history.md` — 工程历史（historical，仅追溯）
+- `decisions/04_pdd_order_sync_spec.md` — PDD 订单同步/富化/退款链接规格（approved）
 - `runbooks/01_用户使用手册.md` — 用户使用手册（启动、处理待确认、规则、流水、批次、备份）
 - `contracts/` — 合同（暂无）
 

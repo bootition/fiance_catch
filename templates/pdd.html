@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}拼多多订单同步{% endblock %}
+{% block page_title %}拼多多订单同步{% endblock %}
+{% block content %}
+<section class="card">
+  {% if flash %}<p class="flash">{{ flash }}</p>{% endif %}
+  <h2>当前状态</h2>
+  <table class="table compact">
+    <tr><th>最近同步</th><td>{{ latest_run.id if latest_run else '—' }}</td><th>状态</th><td>{{ latest_run.status if latest_run else '—' }}</td></tr>
+    <tr><th>订单快照</th><td>{{ order_count }}</td><th>最近导入时间</th><td>{{ latest_run.finished_at if latest_run else '—' }}</td></tr>
+    <tr><th>支出富化（active）</th><td>{{ enrich_active }}</td><th>待人工复核富化</th><td>{{ enrich_review }}</td></tr>
+    <tr><th>退款订单链接</th><td>{{ refund_links }}</td><th>拼多多待确认支出</th><td>{{ pending_expense }}</td></tr>
+    <tr><th>拼多多待处理退款</th><td>{{ pending_refund }}</td><th></th><td></td></tr>
+  </table>
+</section>
+<section class="card">
+  <h2>导入新的订单快照（JSONL）</h2>
+  <p>请使用审计过的采集器导出 JSONL；导入会写入订单、重跑支出匹配并应用高置信富化，同时生成退款订单链接。</p>
+  <form action="/pdd/import" method="post" enctype="multipart/form-data">
+    <input type="file" name="file" accept=".jsonl,application/jsonl,application/json" required>
+    <button type="submit" class="button">导入并匹配</button>
+  </form>
+  <form action="/pdd/rematch" method="post" style="margin-top:8px">
+    <button type="submit" class="button">用已有订单快照重跑匹配</button>
+  </form>
+</section>
+{% endblock %}

@@ -6,7 +6,7 @@ from .settings import Settings
 
 LEDGER_V2_MARKER = "ledger_v2_init_at"
 SCHEMA_VERSION_KEY = "schema_version"
-SCHEMA_VERSION = 7  # 6 = 规则平台/方向条件；7 = 规则可匹配原始交易分类 raw_type
+SCHEMA_VERSION = 8  # 7 = raw_type 规则；8 = PDD 订单同步/富化/退款订单链接
 
 
 def _connect(db_path: str | Path):
@@ -171,7 +171,7 @@ def init_new_schema(conn: sqlite3.Connection) -> None:
         """
         CREATE TABLE IF NOT EXISTS entry_audit_events (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
-          event_type TEXT NOT NULL CHECK(event_type IN ('manual_edit','bulk_confirm','rule_applied','refund_linked','batch_revoked','high_risk_resolved','bulk_reopen')),
+          event_type TEXT NOT NULL CHECK(event_type IN ('manual_edit','bulk_confirm','rule_applied','refund_linked','batch_revoked','high_risk_resolved','bulk_reopen','refund_unlinked','pdd_enrich_applied','pdd_enrich_revoked')),
           ref_ledger_id INTEGER,
           ref_rule_id INTEGER,
           ref_batch_id INTEGER,
@@ -386,6 +386,90 @@ def _repair_masked_counterparty_rules(conn: sqlite3.Connection) -> int:
     return repaired
 
 
+def _create_pdd_tables(conn: sqlite3.Connection) -> None:
+    """v8：拼多多订单同步、富化与退款订单链接表。"""
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS pdd_sync_runs (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          source TEXT NOT NULL DEFAULT '',
+          script_sha256 TEXT NOT NULL DEFAULT '',
+          started_at TEXT NOT NULL,
+          finished_at TEXT,
+          raw_count INTEGER NOT NULL DEFAULT 0 CHECK(raw_count >= 0),
+          order_count INTEGER NOT NULL DEFAULT 0 CHECK(order_count >= 0),
+          security_ok INTEGER NOT NULL DEFAULT 0 CHECK(security_ok IN (0,1)),
+          status TEXT NOT NULL DEFAULT 'running' CHECK(status IN ('running','ok','failed')),
+          report_path TEXT NOT NULL DEFAULT ''
+        );
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS pdd_orders (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          order_sn TEXT NOT NULL UNIQUE,
+          parent_order_sn TEXT NOT NULL DEFAULT '',
+          order_type INTEGER,
+          order_time TEXT,
+          pay_time TEXT,
+          display_amount_cents INTEGER NOT NULL CHECK(display_amount_cents >= 0),
+          order_amount_cents INTEGER,
+          discount_amount_cents INTEGER NOT NULL DEFAULT 0,
+          status_text TEXT NOT NULL DEFAULT '',
+          mall_name TEXT NOT NULL DEFAULT '',
+          goods_json TEXT NOT NULL DEFAULT '[]',
+          raw_path TEXT NOT NULL DEFAULT '',
+          fetched_run_id INTEGER REFERENCES pdd_sync_runs(id) ON DELETE SET NULL,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS pdd_order_enrichments (
+          source_transaction_id INTEGER PRIMARY KEY REFERENCES source_transactions(id) ON DELETE RESTRICT,
+          product_desc TEXT NOT NULL,
+          method TEXT NOT NULL DEFAULT '',
+          confidence TEXT NOT NULL DEFAULT 'medium' CHECK(confidence IN ('high','medium','low','none')),
+          status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','manual_review')),
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS pdd_order_enrichment_items (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          enrichment_id INTEGER NOT NULL REFERENCES pdd_order_enrichments(source_transaction_id) ON DELETE CASCADE,
+          order_sn TEXT NOT NULL,
+          amount_cents INTEGER NOT NULL CHECK(amount_cents >= 0)
+        );
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS pdd_refund_order_links (
+          refund_source_transaction_id INTEGER PRIMARY KEY REFERENCES source_transactions(id) ON DELETE RESTRICT,
+          order_sn TEXT NOT NULL,
+          match_method TEXT NOT NULL DEFAULT '',
+          confidence TEXT NOT NULL DEFAULT 'high' CHECK(confidence IN ('high','medium','low')),
+          amount_cents INTEGER NOT NULL CHECK(amount_cents >= 0),
+          time_diff_seconds INTEGER,
+          created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_pdd_orders_time ON pdd_orders(order_time)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_pdd_enrich_items_enrichment ON pdd_order_enrichment_items(enrichment_id)"
+    )
+
+
 def _current_schema_version(conn: sqlite3.Connection) -> int | None:
     row = conn.execute(
         "SELECT value FROM schema_meta WHERE key = ?", (SCHEMA_VERSION_KEY,)
@@ -488,6 +572,19 @@ def _audit_events_has_bulk_reopen_type(conn: sqlite3.Connection) -> bool:
     return "bulk_reopen" in normalized
 
 
+def _audit_events_has_v8_types(conn: sqlite3.Connection) -> bool:
+    row = conn.execute(
+        """
+        SELECT sql FROM sqlite_master
+        WHERE type = 'table' AND name = 'entry_audit_events'
+        """
+    ).fetchone()
+    if row is None or row["sql"] is None:
+        return False
+    normalized = "".join(str(row["sql"]).lower().split())
+    return "refund_unlinked" in normalized and "pdd_enrich_applied" in normalized
+
+
 def _rebuild_audit_events(conn: sqlite3.Connection) -> None:
     """重建 entry_audit_events 以扩展 event_type CHECK（高风险 + 退回待确认）。"""
     conn.execute("ALTER TABLE entry_audit_events RENAME TO entry_audit_events__legacy")
@@ -495,7 +592,7 @@ def _rebuild_audit_events(conn: sqlite3.Connection) -> None:
         """
         CREATE TABLE entry_audit_events (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
-          event_type TEXT NOT NULL CHECK(event_type IN ('manual_edit','bulk_confirm','rule_applied','refund_linked','batch_revoked','high_risk_resolved','bulk_reopen')),
+          event_type TEXT NOT NULL CHECK(event_type IN ('manual_edit','bulk_confirm','rule_applied','refund_linked','batch_revoked','high_risk_resolved','bulk_reopen','refund_unlinked','pdd_enrich_applied','pdd_enrich_revoked')),
           ref_ledger_id INTEGER,
           ref_rule_id INTEGER,
           ref_batch_id INTEGER,
@@ -532,6 +629,7 @@ def _migrate_v2_schema(conn: sqlite3.Connection) -> None:
     v6：classification_rules 增加 platform/direction 条件，修复脱敏商户规则；
         entry_audit_events 增加 bulk_reopen（退回待确认）
     v7：classification_rules.match_field 允许 raw_type（原始交易分类）
+    v8：新增 PDD 订单同步/富化/退款订单链接表；审计事件类型扩展
     """
     current = _current_schema_version(conn)
     if current is not None and current >= SCHEMA_VERSION:
@@ -566,8 +664,13 @@ def _migrate_v2_schema(conn: sqlite3.Connection) -> None:
             """,
             ("migration_repaired_masked_counterparty_rules", str(repaired_masked)),
         )
-    if not _audit_events_has_high_risk_type(conn) or not _audit_events_has_bulk_reopen_type(conn):
+    if (
+        not _audit_events_has_high_risk_type(conn)
+        or not _audit_events_has_bulk_reopen_type(conn)
+        or not _audit_events_has_v8_types(conn)
+    ):
         _rebuild_audit_events(conn)
+    _create_pdd_tables(conn)
     conn.execute(
         """
         INSERT OR REPLACE INTO schema_meta(key, value)

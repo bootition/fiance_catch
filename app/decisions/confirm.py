@@ -179,7 +179,9 @@ def group_review_items(db_path) -> list[Group]:
               st.direction,
               st.occurred_at,
               st.amount_cents,
-              st.item_desc,
+              COALESCE((SELECT en.product_desc FROM pdd_order_enrichments AS en
+                        WHERE en.source_transaction_id = st.id AND en.status = 'active'),
+                       st.item_desc) AS item_desc,
               st.raw_type,
               st.batch_id
             FROM review_queue AS rq

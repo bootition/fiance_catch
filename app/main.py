@@ -6,7 +6,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .db import init_db
 from .router_support.settings_access import configure_settings
-from .routers import imports, inbox, overview, rules, transactions
+from .routers import imports, inbox, overview, pdd, rules, transactions
 from .settings import get_settings
 
 
@@ -26,3 +26,4 @@ app.include_router(imports.router)
 app.include_router(inbox.router)
 app.include_router(transactions.router)
 app.include_router(rules.router)
+app.include_router(pdd.router)

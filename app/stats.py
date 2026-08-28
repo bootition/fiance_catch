@@ -270,9 +270,9 @@ def list_entries_filtered(
     if q and q.strip():
         needle = f"%{q.strip()}%"
         clauses.append(
-            "(st.counterparty LIKE ? OR st.item_desc LIKE ? OR st.source_txn_id LIKE ? OR le.note LIKE ?)"
+            "(st.counterparty LIKE ? OR st.item_desc LIKE ? OR en.product_desc LIKE ? OR st.source_txn_id LIKE ? OR le.note LIKE ?)"
         )
-        params.extend([needle, needle, needle, needle])
+        params.extend([needle, needle, needle, needle, needle])
 
     safe_limit = max(1, min(int(limit), 2000))
     with connect(db_path) as conn:
@@ -282,11 +282,13 @@ def list_entries_filtered(
               le.*,
               st.platform,
               st.counterparty,
-              st.item_desc,
+              COALESCE(en.product_desc, st.item_desc) AS item_desc,
               st.status_text,
               COALESCE(SUM(rl.refund_amount_cents), 0) AS refunded_cents
             FROM ledger_entries AS le
             LEFT JOIN source_transactions AS st ON st.id = le.source_transaction_id
+            LEFT JOIN pdd_order_enrichments AS en
+                   ON en.source_transaction_id = st.id AND en.status = 'active'
             LEFT JOIN refund_links AS rl ON rl.original_ledger_id = le.id
             WHERE {' AND '.join(clauses)}
             GROUP BY le.id

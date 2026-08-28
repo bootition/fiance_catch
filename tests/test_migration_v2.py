@@ -263,7 +263,7 @@ def test_init_db_upgrades_stage2_v2_schema(tmp_path):
         version = conn.execute(
             "SELECT value FROM schema_meta WHERE key = 'schema_version'"
         ).fetchone()
-        assert version is not None and version["value"] == "7"
+        assert version is not None and version["value"] == "8"
 
 
 def test_init_db_upgrade_idempotent(tmp_path):
@@ -277,7 +277,7 @@ def test_init_db_upgrade_idempotent(tmp_path):
         version = conn.execute(
             "SELECT value FROM schema_meta WHERE key = 'schema_version'"
         ).fetchone()
-        assert version["value"] == "7"
+        assert version["value"] == "8"
 
 
 def test_upgraded_lib_supports_import_and_decisions(tmp_path):
@@ -346,7 +346,7 @@ def test_init_db_upgrade_with_blank_rule_isolated(tmp_path):
         version = conn.execute(
             "SELECT value FROM schema_meta WHERE key = 'schema_version'"
         ).fetchone()
-        assert version["value"] == "7"
+        assert version["value"] == "8"
         rules = conn.execute(
             "SELECT match_pattern, status FROM classification_rules ORDER BY id"
         ).fetchall()
